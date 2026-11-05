@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive 3D Oscillators & Kinematics Tracking Rig</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    body { margin: 0; overflow: hidden; user-select: none; font-family: system-ui, -apple-system, sans-serif; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    .glass-panel {
+      background: rgba(18, 24, 38, 0.82);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased">
+
+  <!-- 3D Canvas -->
+  <canvas id="glCanvas"></canvas>
+
+  <!-- Top Header & Model Selector Overlay -->
+  <div class="absolute top-4 left-4 right-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 pointer-events-none">
+    <div class="glass-panel px-4 py-3 rounded-xl shadow-2xl pointer-events-auto">
+      <div class="flex items-center gap-2">
+        <span class="inline-block w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></span>
+        <h1 class="text-base font-bold tracking-tight text-white">3D Kinematics Apparatus CAD Suite</h1>
+      </div>
+      <p class="text-xs text-slate-400 mt-0.5">Interactive 360° Physical Assembly & Ultrasonic Raycast Model</p>
+    </div>
+
+    <!-- System Selector Tabs -->
+    <div class="glass-panel p-1.5 rounded-xl shadow-2xl flex flex-wrap gap-1 pointer-events-auto max-w-full overflow-x-auto">
+      <button onclick="switchModel('spring')" id="btn-spring" class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all bg-sky-500/30 text-sky-200 border border-sky-400/40 shadow-sm">
+        1. Vertical Spring
+      </button>
+      <button onclick="switchModel('pendulum')" id="btn-pendulum" class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all text-slate-300 hover:bg-slate-800">
+        2. Simple Pendulum
+      </button>
+      <button onclick="switchModel('cart')" id="btn-cart" class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all text-slate-300 hover:bg-slate-800">
+        3. Dynamics Cart
+      </button>
+      <button onclick="switchModel('torsion')" id="btn-torsion" class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all text-slate-300 hover:bg-slate-800">
+        4. Torsion Disc
+      </button>
+      <button onclick="switchModel('freefall')" id="btn-freefall" class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all text-slate-300 hover:bg-slate-800">
+        5. Free-Fall Tube
+      </button>
+      <button onclick="switchModel('sensor')" id="btn-sensor" class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all text-amber-300 hover:bg-amber-950/40 border border-amber-500/20">
+        Sensor Pod Close-up
+      </button>
+    </div>
+  </div>
+
+  <!-- Bottom Left: Telemetry & Rig Specs Card -->
+  <div class="absolute bottom-4 left-4 glass-panel p-4 rounded-xl shadow-2xl max-w-xs md:max-w-sm pointer-events-auto">
+    <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-700/60">
+      <span class="text-xs uppercase tracking-wider font-semibold text-sky-400" id="spec-title">Vertical Spring-Mass Oscillator</span>
+      <span class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono">1D Z-Axis</span>
+    </div>
+    <div class="space-y-1.5 text-xs text-slate-300" id="spec-details">
+      <div class="flex justify-between"><span class="text-slate-400">Restoring Element:</span> <span class="font-mono text-white">Extension Spring (k=15 N/m)</span></div>
+      <div class="flex justify-between"><span class="text-slate-400">Oscillating Mass:</span> <span class="font-mono text-white">200g Slotted Brass Weights</span></div>
+      <div class="flex justify-between"><span class="text-slate-400">Target Plate:</span> <span class="font-mono text-white">60x60mm Retro-Reflector</span></div>
+      <div class="flex justify-between"><span class="text-slate-400">Sensor Sightline:</span> <span class="font-mono text-amber-300">Upward Vertical (0° Bore)</span></div>
+      <div class="flex justify-between"><span class="text-slate-400">Equilibrium Dist:</span> <span class="font-mono text-white">38.0 cm</span></div>
+    </div>
+  </div>
+
+  <!-- Bottom Right: Interactive 3D Controls -->
+  <div class="absolute bottom-4 right-4 glass-panel p-2.5 rounded-xl shadow-2xl flex flex-col gap-2 pointer-events-auto">
+    <div class="flex items-center gap-2">
+      <button onclick="toggleAnimation()" id="btn-anim" class="flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md">
+        ⏸ Pause Motion
+      </button>
+      <button onclick="toggleRays()" id="btn-rays" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 border border-cyan-500/30 transition-all">
+        🔊 Sound Waves: ON
+      </button>
+      <button onclick="resetCamera()" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all">
+        🔄 Reset View
+      </button>
+    </div>
+    <div class="text-[11px] text-slate-400 text-center font-mono pt-1 border-t border-slate-700/50">
+      Left Drag: 360° Rotate | Right Drag: Pan | Scroll: Zoom
+    </div>
+  </div>
+
+  <!-- 3D Canvas Script Engine -->
+  <script>
+    const canvas = document.getElementById('glCanvas');
+    const ctx = canvas.getContext('2d');
+
+    let currentModel = 'spring';
+    let isAnimated = true;
+    let showRays = true;
+    let animTime = 0.0;
+
+    // Camera Orbit State
+    let camPitch = 0.35;
+    let camYaw = -0.55;
+    let camDist = 2.4;
+    let panX = 0.0;
+    let panY = -0.15;
+
+    let isDragging = false;
+    let isRightDragging = false;
+    let lastMouseX = 0;
+    let lastMouseY = 0;
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Mouse Interaction
+    canvas.addEventListener('mousedown', (e) => {
+      isDragging = e.button === 0;
+      isRightDragging = e.button === 2;
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+    });
+
+    window.addEventListener('mouseup', () => {
+      isDragging = false;
+      isRightDragging = false;
+    });
+
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging && !isRightDragging) return;
+      const dx = e.clientX - lastMouseX;
+      const dy = e.clientY - lastMouseY;
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+
+      if (isDragging) {
+        camYaw += dx * 0.007;
+        camPitch = Math.max(-1.4, Math.min(1.4, camPitch - dy * 0.007));
+      } else if (isRightDragging) {
+        panX += dx * 0.002 * (camDist / 2.0);
+        panY -= dy * 0.002 * (camDist / 2.0);
+      }
+    });
+
+    canvas.addEventListener('wheel', (e) => {
+      camDist = Math.max(0.6, Math.min(5.5, camDist + e.deltaY * 0.002));
+      e.preventDefault();
+    }, { passive: false });
+
+    function resetCamera() {
+      camPitch = 0.35;
+      camYaw = -0.55;
+      camDist = 2.4;
+      panX = 0.0;
+      panY = -0.15;
+    }
+
+    function toggleAnimation() {
+      isAnimated = !isAnimated;
+      document.getElementById('btn-anim').textContent = isAnimated ? "⏸ Pause Motion" : "▶ Play Motion";
+      document.getElementById('btn-anim').className = isAnimated 
+        ? "flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md"
+        : "flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white transition-all shadow-md";
+    }
+
+    function toggleRays() {
+      showRays = !showRays;
+      document.getElementById('btn-rays').textContent = showRays ? "🔊 Sound Waves: ON" : "🔇 Sound Waves: OFF";
+      document.getElementById('btn-rays').className = showRays
+        ? "px-3 py-1.5 rounded-lg text-xs font-medium bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 border border-cyan-500/30 transition-all"
+        : "px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 transition-all";
+    }
+
+    const modelSpecs = {
+      spring: {
+        title: "Vertical Spring-Mass Oscillator",
+        badge: "1D Z-Axis",
+        specs: [
+          ["Restoring Element:", "Extension Spring (k=15 N/m)"],
+          ["Oscillating Mass:", "200g Slotted Brass Weights"],
+          ["Target Plate:", "60x60mm Retro-Reflector (Yellow)"],
+          ["Sensor Sightline:", "Upward Vertical (0° Bore)"],
+          ["Equilibrium Dist:", "38.0 cm baseline"]
+        ]
+      },
+      pendulum: {
+        title: "Simple & Compound Pendulum",
+        badge: "Arc Motion",
+        specs: [
+          ["Suspension Line:", "Non-stretch Nylon Line (L=0.60m)"],
+          ["Oscillating Bob:", "35mm Spherical Brass Bob"],
+          ["Target Vane:", "Lightweight Vertical Vane (White)"],
+          ["Sensor Sightline:", "Horizontal Tangential to Equilibrium"],
+          ["Restoring Factor:", "k_eff = m*g / L"]
+        ]
+      },
+      cart: {
+        title: "Horizontal Dynamics Track / Cart",
+        badge: "1D Linear X-Axis",
+        specs: [
+          ["Track Setup:", "60cm Low-Friction Rail with Dual Endstops"],
+          ["Glider Cart:", "Low-Friction Wheeled Dynamics Glider"],
+          ["Spring System:", "Coupled Opposing Springs (k_eff = k1 + k2)"],
+          ["Target Plate:", "Vertical Reflector on Cart Face"],
+          ["Sensor Sightline:", "Axial Sightline along Track Axis"]
+        ]
+      },
+      torsion: {
+        title: "Torsional Rotary Oscillator",
+        badge: "Rotary θ-Axis",
+        specs: [
+          ["Suspension Wire:", "High-tensile Steel Torsion Wire"],
+          ["Rotating Inertia:", "160mm Heavy Brass Inertia Disc"],
+          ["Radial Paddle:", "Eccentric Reflector at radius r = 75mm"],
+          ["Sensor Sightline:", "Aimed perpendicularly at tangential paddle"],
+          ["Restoring Torque:", "τ = -κ θ  ->  k_eff = κ / r²"]
+        ]
+      },
+      freefall: {
+        title: "Free-Fall Kinematics Column",
+        badge: "1D Downward g-Field",
+        specs: [
+          ["Guide Tube:", "100mm Clear Acrylic Drop Tube"],
+          ["Release Trigger:", "5V Arduino Electromagnet"],
+          ["Falling Object:", "Steel Mass with Top Target Disk"],
+          ["Sensor Sightline:", "Downward from Top Cap"],
+          ["Derivation:", "Direct measurement of g = 9.81 m/s²"]
+        ]
+      },
+      sensor: {
+        title: "Universal Sensor Pod & Bracket",
+        badge: "Modular Hardware",
+        specs: [
+          ["Sensor Unit:", "HC-SR04 40kHz Ultrasonic Transducer"],
+          ["Mount Interface:", "1/4\"-20 Mini Swivel Ball Head"],
+          ["Acoustic Cone:", "15° Angular Dispersion Corridor"],
+          ["Acoustic Baffle:", "Short cylindrical foam anti-scattering shroud"],
+          ["Electronics:", "Arduino Uno R3 via 115200 Baud CSV Stream"]
+        ]
+      }
+    };
+
+    function switchModel(type) {
+      currentModel = type;
+      // Update UI button highlights
+      document.querySelectorAll('[id^="btn-"]').forEach(btn => {
+        if (btn.id === 'btn-' + type) {
+          btn.className = "px-3 py-1.5 rounded-lg text-xs font-medium transition-all bg-sky-500/30 text-sky-200 border border-sky-400/40 shadow-sm";
+        } else if (btn.id.includes('sensor')) {
+          btn.className = "px-3 py-1.5 rounded-lg text-xs font-medium transition-all text-amber-300 hover:bg-amber-950/40 border border-amber-500/20";
+        } else {
+          btn.className = "px-3 py-1.5 rounded-lg text-xs font-medium transition-all text-slate-300 hover:bg-slate-800";
+        }
+      });
+
+      // Update Spec Card
+      const info = modelSpecs[type];
+      document.getElementById('spec-title').textContent = info.title;
+      let html = '';
+      for (const [k, v] of info.specs) {
+        html += `<div class="flex justify-between"><span class="text-slate-400">${k}</span> <span class="font-mono text-white">${v}</span></div>`;
+      }
+      document.getElementById('spec-details').innerHTML = html;
+    }
+
+    // =========================================================================
+    // 3D Math & Projection Utilities
+    // =========================================================================
+    function project(x, y, z) {
+      // Rotate by Yaw around Y axis
+      const cosY = Math.cos(camYaw), sinY = Math.sin(camYaw);
+      const x1 = x * cosY - z * sinY;
+      const z1 = x * sinY + z * cosY;
+
+      // Rotate by Pitch around X axis
+      const cosP = Math.cos(camPitch), sinP = Math.sin(camPitch);
+      const y2 = y * cosP - z1 * sinP;
+      const z2 = y * sinP + z1 * cosP;
+
+      // Translate camera distance
+      const zCam = z2 + camDist;
+      if (zCam <= 0.05) return null; // Behind camera
+
+      const fov = canvas.height * 0.95;
+      const sx = (x1 / zCam) * fov + canvas.width / 2.0 + panX * fov;
+      const sy = (-y2 / zCam) * fov + canvas.height / 2.0 + panY * fov;
+
+      return { x: sx, y: sy, depth: zCam };
+    }
+
+    // Draw Helpers
+    function drawLine3D(p1, p2, color, width = 1.5, dashed = false) {
+      const sp1 = project(p1[0], p1[1], p1[2]);
+      const sp2 = project(p2[0], p2[1], p2[2]);
+      if (!sp1 || !sp2) return;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      if (dashed) ctx.setLineDash([4, 4]);
+      ctx.moveTo(sp1.x, sp1.y);
+      ctx.lineTo(sp2.x, sp2.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawBox3D(cx, cy, cz, sx, sy, sz, color, strokeColor = 'rgba(255,255,255,0.25)') {
+      const hx = sx/2, hy = sy/2, hz = sz/2;
+      const corners = [
+        [-hx, -hy, -hz], [hx, -hy, -hz], [hx, hy, -hz], [-hx, hy, -hz],
+        [-hx, -hy, hz],  [hx, -hy, hz],  [hx, hy, hz],  [-hx, hy, hz]
+      ].map(c => project(cx + c[0], cy + c[1], cz + c[2]));
+
+      if (corners.some(c => c === null)) return;
+
+      const faces = [
+        [0, 1, 2, 3], [4, 5, 6, 7], // Front, Back
+        [0, 1, 5, 4], [2, 3, 7, 6], // Bottom, Top
+        [0, 3, 7, 4], [1, 2, 6, 5]  // Left, Right
+      ];
+
+      for (const face of faces) {
+        ctx.beginPath();
+        ctx.moveTo(corners[face[0]].x, corners[face[0]].y);
+        for (let i = 1; i < face.length; i++) {
+          ctx.lineTo(corners[face[i]].x, corners[face[i]].y);
+        }
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.fill();
+        if (strokeColor) {
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      }
+    }
+
+    function drawCylinder3D(p1, p2, radius, color, segments = 12) {
+      const sp1 = project(p1[0], p1[1], p1[2]);
+      const sp2 = project(p2[0], p2[1], p2[2]);
+      if (!sp1 || !sp2) return;
+
+      const dx = sp2.x - sp1.x;
+      const dy = sp2.y - sp1.y;
+      const len = Math.hypot(dx, dy);
+      if (len < 1) return;
+
+      const scale = (canvas.height * 0.95) / sp1.depth;
+      const pixRadius = radius * scale;
+
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(1.5, pixRadius * 2);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(sp1.x, sp1.y);
+      ctx.lineTo(sp2.x, sp2.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawSphere3D(cx, cy, cz, radius, color) {
+      const sp = project(cx, cy, cz);
+      if (!sp) return;
+      const scale = (canvas.height * 0.95) / sp.depth;
+      const rPix = Math.max(2, radius * scale);
+
+      ctx.beginPath();
+      ctx.arc(sp.x, sp.y, rPix, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+
+    function drawHelicalSpring(top, bottom, radius, coils = 14, color = '#00f0ff') {
+      const dy = (bottom[1] - top[1]) / (coils * 16);
+      let prev = top;
+      for (let i = 1; i <= coils * 16; i++) {
+        const theta = (i / 16) * Math.PI * 2;
+        const curr = [
+          top[0] + radius * Math.cos(theta),
+          top[1] + dy * i,
+          top[2] + radius * Math.sin(theta)
+        ];
+        drawLine3D(prev, curr, color, 2.0);
+        prev = curr;
+      }
+    }
+
+    function drawSoundWaves(sensorPos, targetPos, dir = [0, 1, 0]) {
+      if (!showRays) return;
+      const dist = Math.hypot(targetPos[0]-sensorPos[0], targetPos[1]-sensorPos[1], targetPos[2]-sensorPos[2]);
+      const pulseT = (animTime * 4.0) % 1.0;
+      
+      // Moving acoustic wavefront arcs
+      for (let i = 0; i < 4; i++) {
+        const frac = (pulseT + i * 0.25) % 1.0;
+        const waveCenter = [
+          sensorPos[0] + (targetPos[0]-sensorPos[0]) * frac,
+          sensorPos[1] + (targetPos[1]-sensorPos[1]) * frac,
+          sensorPos[2] + (targetPos[2]-sensorPos[2]) * frac
+        ];
+        const sp = project(waveCenter[0], waveCenter[1], waveCenter[2]);
+        if (sp) {
+          const spread = 8 + frac * 28;
+          ctx.beginPath();
+          ctx.arc(sp.x, sp.y, spread, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(0, 240, 255, ${Math.max(0, 0.7 - frac * 0.7)})`;
+          ctx.lineWidth = 1.8;
+          ctx.stroke();
+        }
+      }
+
+      // 15-degree boundary cone rays
+      drawLine3D(sensorPos, [targetPos[0]-0.03, targetPos[1], targetPos[2]], 'rgba(0, 240, 255, 0.25)', 1, true);
+      drawLine3D(sensorPos, [targetPos[0]+0.03, targetPos[1], targetPos[2]], 'rgba(0, 240, 255, 0.25)', 1, true);
+    }
+
+    function draw3DLabel(x, y, z, text, subtext = '') {
+      const sp = project(x, y, z);
+      if (!sp) return;
+
+      ctx.save();
+      ctx.font = '11px monospace';
+      const tw = ctx.measureText(text).width + 12;
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.5)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(sp.x - tw/2, sp.y - 12, tw, 22, 4);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#38bdf8';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, sp.x, sp.y - 1);
+      ctx.restore();
+    }
+
+    // Grid Floor
+    function drawGridFloor() {
+      const gridCount = 8;
+      const size = 0.8;
+      const step = size / gridCount;
+      for (let i = -gridCount; i <= gridCount; i++) {
+        drawLine3D([i * step, 0, -size], [i * step, 0, size], 'rgba(51, 65, 85, 0.35)', 1);
+        drawLine3D([-size, 0, i * step], [size, 0, i * step], 'rgba(51, 65, 85, 0.35)', 1);
+      }
+    }
+
+    // =========================================================================
+    // MODEL RENDERERS
+    // =========================================================================
+    function renderVerticalSpring() {
+      // Cast Iron Ring Stand Base
+      drawBox3D(0, 0.015, 0, 0.22, 0.025, 0.16, '#334155');
+      // Vertical Upright Stainless Steel Rod
+      drawCylinder3D([-0.08, 0.03, 0], [-0.08, 0.65, 0], 0.007, '#94a3b8');
+      // Top Crossbar Clamp
+      drawBox3D(-0.08, 0.62, 0, 0.03, 0.03, 0.03, '#475569');
+      drawCylinder3D([-0.08, 0.62, 0], [0.05, 0.62, 0], 0.005, '#94a3b8');
+
+      // Physics Motion: y = y_eq + A * cos(omega * t) * exp(-gamma * t)
+      const omega = 5.2;
+      const gamma = 0.06;
+      const amp = 0.08 * (isAnimated ? Math.exp(-gamma * animTime) * Math.cos(omega * animTime) : 1.0);
+      const massY = 0.36 + amp;
+
+      // Helical Extension Spring
+      drawHelicalSpring([0.05, 0.62, 0], [0.05, massY + 0.07, 0], 0.018, 14, '#38bdf8');
+
+      // Hooked Mass Set (Slotted brass weight)
+      drawCylinder3D([0.05, massY + 0.07, 0], [0.05, massY + 0.01, 0], 0.022, '#eab308');
+
+      // Rigid Acoustic Target Plate (Yellow Reflector)
+      drawBox3D(0.05, massY, 0, 0.070, 0.004, 0.070, '#facc15', '#ffffff');
+
+      // Upward Looking Sensor Pod on Base (at x=0.05, y=0.04)
+      drawBox3D(0.05, 0.035, 0, 0.055, 0.006, 0.025, '#0284c7');
+      drawCylinder3D([0.037, 0.035, 0], [0.037, 0.052, 0], 0.008, '#0f172a'); // TX
+      drawCylinder3D([0.063, 0.035, 0], [0.063, 0.052, 0], 0.008, '#0f172a'); // RX
+
+      // Arduino Uno on Base
+      drawBox3D(-0.02, 0.032, 0.04, 0.065, 0.010, 0.052, '#0d9488');
+
+      // Ultrasonic Sound Rays
+      drawSoundWaves([0.05, 0.052, 0], [0.05, massY, 0]);
+
+      // 3D Annotations
+      draw3DLabel(0.05, massY, 0.06, 'Target Plate', 'Retro-Reflector');
+      draw3DLabel(0.05, 0.052, -0.04, 'HC-SR04 Pod', 'Boresight 0°');
+    }
+
+    function renderPendulum() {
+      // Base & Stand
+      drawBox3D(0, 0.015, 0, 0.24, 0.025, 0.16, '#334155');
+      drawCylinder3D([-0.10, 0.03, 0], [-0.10, 0.68, 0], 0.007, '#94a3b8');
+      drawCylinder3D([-0.10, 0.66, 0], [0.06, 0.66, 0], 0.005, '#94a3b8');
+
+      // Swing Angle
+      const omega = 4.0;
+      const theta = 0.26 * (isAnimated ? Math.cos(omega * animTime) * Math.exp(-0.05 * animTime) : 1.0);
+      const L = 0.44;
+      const pivot = [0.06, 0.66, 0];
+      const bobPos = [
+        pivot[0] + L * Math.sin(theta),
+        pivot[1] - L * Math.cos(theta),
+        0
+      ];
+
+      // Suspension Line
+      drawLine3D(pivot, bobPos, '#cbd5e1', 1.8);
+
+      // Spherical Bob
+      drawSphere3D(bobPos[0], bobPos[1], bobPos[2], 0.022, '#f59e0b');
+
+      // Lightweight Target Vane (Facing towards sensor at x=-0.03)
+      drawBox3D(bobPos[0] - 0.022, bobPos[1], bobPos[2], 0.003, 0.060, 0.060, '#f8fafc', '#38bdf8');
+
+      // Horizontally Pointed Sensor Pod at Equilibrium height
+      const eqY = pivot[1] - L;
+      const sensorPos = [-0.03, eqY, 0];
+      drawCylinder3D([-0.10, eqY, 0], [sensorPos[0] - 0.02, eqY, 0], 0.004, '#64748b');
+      drawBox3D(sensorPos[0] - 0.01, eqY, 0, 0.005, 0.025, 0.055, '#0284c7');
+      drawCylinder3D([sensorPos[0] - 0.01, eqY, -0.013], [sensorPos[0] + 0.01, eqY, -0.013], 0.008, '#0f172a');
+      drawCylinder3D([sensorPos[0] - 0.01, eqY, 0.013], [sensorPos[0] + 0.01, eqY, 0.013], 0.008, '#0f172a');
+
+      // Sound Rays
+      drawSoundWaves(sensorPos, [bobPos[0] - 0.022, bobPos[1], bobPos[2]]);
+      draw3DLabel(bobPos[0], bobPos[1] + 0.04, 0, 'Target Vane', 'Reflective Face');
+      draw3DLabel(sensorPos[0], sensorPos[1] - 0.04, 0, 'Horizontal Pod');
+    }
+
+    function renderCart() {
+      // Linear Track Rail
+      drawBox3D(0.20, 0.02, 0, 0.65, 0.018, 0.08, '#475569');
+      // End Stops
+      drawBox3D(-0.11, 0.05, 0, 0.018, 0.07, 0.08, '#334155');
+      drawBox3D(0.51, 0.05, 0, 0.018, 0.07, 0.08, '#334155');
+
+      // Cart Motion
+      const omega = 4.8;
+      const cartX = 0.20 + 0.10 * (isAnimated ? Math.cos(omega * animTime) * Math.exp(-0.04 * animTime) : 1.0);
+
+      // Dynamics Cart Body
+      drawBox3D(cartX, 0.055, 0, 0.13, 0.035, 0.065, '#0284c7');
+      // Wheels
+      drawCylinder3D([cartX - 0.04, 0.025, -0.036], [cartX - 0.04, 0.025, 0.036], 0.012, '#0f172a');
+      drawCylinder3D([cartX + 0.04, 0.025, -0.036], [cartX + 0.04, 0.025, 0.036], 0.012, '#0f172a');
+
+      // Dual Opposing Springs
+      drawHelicalSpring([-0.10, 0.055, 0], [cartX - 0.065, 0.055, 0], 0.012, 16, '#38bdf8');
+      drawHelicalSpring([cartX + 0.065, 0.055, 0], [0.50, 0.055, 0], 0.012, 16, '#38bdf8');
+
+      // Target Plate on Cart Face
+      drawBox3D(cartX - 0.067, 0.065, 0, 0.003, 0.055, 0.055, '#facc15', '#ffffff');
+
+      // Sensor Pod on Left End-Stop
+      const sensorPos = [-0.09, 0.065, 0];
+      drawBox3D(-0.115, 0.065, 0, 0.005, 0.024, 0.052, '#0284c7');
+      drawCylinder3D([-0.115, 0.065, -0.013], [-0.095, 0.065, -0.013], 0.008, '#0f172a');
+      drawCylinder3D([-0.115, 0.065, 0.013], [-0.095, 0.065, 0.013], 0.008, '#0f172a');
+
+      // Rays
+      drawSoundWaves(sensorPos, [cartX - 0.067, 0.065, 0]);
+      draw3DLabel(cartX, 0.11, 0, 'Glider Cart', 'Low Friction');
+      draw3DLabel(sensorPos[0], 0.11, 0, 'Axial Sensor');
+    }
+
+    function renderTorsion() {
+      // Base & Rod
+      drawBox3D(0, 0.015, 0, 0.24, 0.025, 0.16, '#334155');
+      drawCylinder3D([-0.09, 0.03, 0], [-0.09, 0.58, 0], 0.007, '#94a3b8');
+      drawCylinder3D([-0.09, 0.55, 0], [0.05, 0.55, 0], 0.005, '#94a3b8');
+
+      // Rotation Angle θ
+      const omega = 3.6;
+      const theta = 0.45 * (isAnimated ? Math.cos(omega * animTime) * Math.exp(-0.03 * animTime) : 1.0);
+
+      // Vertical Torsion Wire
+      drawCylinder3D([0.05, 0.55, 0], [0.05, 0.28, 0], 0.0015, '#cbd5e1');
+
+      // Heavy Inertia Disc (Radius R = 0.08)
+      drawCylinder3D([0.05, 0.28, 0], [0.05, 0.265, 0], 0.085, '#d97706');
+
+      // Tangential Target Vane at radius r = 0.075
+      const vaneX = 0.05 + 0.075 * Math.cos(theta);
+      const vaneZ = 0.075 * Math.sin(theta);
+      drawCylinder3D([0.05, 0.27, 0], [vaneX, 0.27, vaneZ], 0.003, '#94a3b8');
+      drawBox3D(vaneX, 0.29, vaneZ, 0.045, 0.045, 0.003, '#facc15', '#ffffff');
+
+      // Sensor Pod Aiming Tangentially at Vane
+      const sensorPos = [vaneX, 0.29, 0.18];
+      drawCylinder3D([-0.09, 0.29, sensorPos[2]], [sensorPos[0], 0.29, sensorPos[2]], 0.004, '#64748b');
+      drawBox3D(sensorPos[0], 0.29, sensorPos[2] + 0.01, 0.052, 0.024, 0.005, '#0284c7');
+      drawCylinder3D([sensorPos[0] - 0.013, 0.29, sensorPos[2] + 0.01], [sensorPos[0] - 0.013, 0.29, sensorPos[2] - 0.008], 0.008, '#0f172a');
+      drawCylinder3D([sensorPos[0] + 0.013, 0.29, sensorPos[2] + 0.01], [sensorPos[0] + 0.013, 0.29, sensorPos[2] - 0.008], 0.008, '#0f172a');
+
+      drawSoundWaves(sensorPos, [vaneX, 0.29, vaneZ]);
+      draw3DLabel(vaneX, 0.34, vaneZ, 'Tangential Vane');
+      draw3DLabel(0.05, 0.23, 0, 'Inertia Disc');
+    }
+
+    function renderFreefall() {
+      // Base with Soft Foam Cushion Pad
+      drawBox3D(0, 0.015, 0, 0.24, 0.025, 0.16, '#334155');
+      drawBox3D(0, 0.035, 0, 0.12, 0.020, 0.12, '#065f46'); // Landing cushion
+
+      // Vertical Upright Guide Rod
+      drawCylinder3D([-0.07, 0.03, 0], [-0.07, 0.72, 0], 0.007, '#94a3b8');
+
+      // Top Header Assembly (at y = 0.68)
+      drawBox3D(0, 0.69, 0, 0.09, 0.025, 0.06, '#334155');
+      // Electromagnet
+      drawCylinder3D([0, 0.68, 0], [0, 0.66, 0], 0.015, '#b45309');
+
+      // Downward-Looking HC-SR04 Pod at top
+      const sensorPos = [0, 0.65, 0.035];
+      drawBox3D(0, 0.655, 0.035, 0.052, 0.005, 0.024, '#0284c7');
+      drawCylinder3D([-0.013, 0.655, 0.035], [-0.013, 0.638, 0.035], 0.008, '#0f172a');
+      drawCylinder3D([0.013, 0.655, 0.035], [0.013, 0.638, 0.035], 0.008, '#0f172a');
+
+      // Simulated Drop Loop (1.6s drop cycle)
+      const tDrop = (animTime * 0.8) % 1.6;
+      const g = 0.65; // Scaled for lab visualization
+      let fallY = 0.64 - 0.5 * g * tDrop * tDrop;
+      if (fallY < 0.06) fallY = 0.06; // Rests on cushion
+
+      // Falling Mass with Top Target Reflector
+      drawCylinder3D([0, fallY - 0.02, 0.035], [0, fallY, 0.035], 0.015, '#e2e8f0');
+      drawBox3D(0, fallY, 0.035, 0.060, 0.003, 0.060, '#facc15', '#ffffff');
+
+      drawSoundWaves(sensorPos, [0, fallY, 0.035]);
+      draw3DLabel(0, 0.73, 0, 'Electromagnet');
+      draw3DLabel(sensorPos[0], sensorPos[1] + 0.04, sensorPos[2], 'Top Sensor');
+      draw3DLabel(0, fallY - 0.04, 0.035, 'Falling Mass');
+    }
+
+    function renderSensorCloseup() {
+      // Close-up zoomed view of the Universal Sensor Pod
+      drawBox3D(0, 0, 0, 0.12, 0.055, 0.006, '#0284c7'); // Blue PCB
+
+      // Transmitter Cylinder (Left)
+      drawCylinder3D([-0.035, 0, 0.003], [-0.035, 0, 0.038], 0.022, '#1e293b');
+      // Receiver Cylinder (Right)
+      drawCylinder3D([0.035, 0, 0.003], [0.035, 0, 0.038], 0.022, '#1e293b');
+
+      // Crystal Oscillator
+      drawBox3D(0, 0.012, 0.006, 0.025, 0.012, 0.008, '#94a3b8');
+      // 4-Pin Dupont Header
+      drawBox3D(0, -0.022, -0.010, 0.035, 0.008, 0.015, '#0f172a');
+
+      // Swivel Ball Joint underneath
+      drawSphere3D(0, 0, -0.038, 0.022, '#64748b');
+      drawCylinder3D([0, 0, -0.038], [0, 0, -0.085], 0.012, '#475569');
+      // 1/4"-20 Rod Clamp Collar
+      drawBox3D(0, 0, -0.095, 0.065, 0.065, 0.025, '#334155');
+
+      // Sound Wave Pulses Emitters
+      if (showRays) {
+        const pulse = (animTime * 3.0) % 1.0;
+        for (let i = 0; i < 3; i++) {
+          const frac = (pulse + i * 0.33) % 1.0;
+          const sp1 = project(-0.035, 0, 0.038 + frac * 0.20);
+          const sp2 = project(0.035, 0, 0.038 + frac * 0.20);
+          if (sp1) {
+            ctx.beginPath();
+            ctx.arc(sp1.x, sp1.y, 12 + frac * 35, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(0, 240, 255, ${0.8 - frac * 0.8})`;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
+          if (sp2) {
+            ctx.beginPath();
+            ctx.arc(sp2.x, sp2.y, 12 + frac * 35, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(251, 146, 60, ${0.8 - frac * 0.8})`;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
+        }
+      }
+
+      draw3DLabel(-0.035, 0, 0.05, 'TX: 40 kHz Transmit');
+      draw3DLabel(0.035, 0, 0.05, 'RX: Echo Listen');
+      draw3DLabel(0, 0, -0.11, '1/4"-20 Ball Swivel');
+    }
+
+    // =========================================================================
+    // MAIN RENDER LOOP
+    // =========================================================================
+    function animate() {
+      if (isAnimated) {
+        animTime += 0.025;
+      }
+
+      // Clear Screen with deep lab background
+      ctx.fillStyle = '#090d16';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      drawGridFloor();
+
+      switch (currentModel) {
+        case 'spring': renderVerticalSpring(); break;
+        case 'pendulum': renderPendulum(); break;
+        case 'cart': renderCart(); break;
+        case 'torsion': renderTorsion(); break;
+        case 'freefall': renderFreefall(); break;
+        case 'sensor': renderSensorCloseup(); break;
+      }
+
+      requestAnimationFrame(animate);
+    }
+
+    animate();
+  </script>
+</body>
+</html>

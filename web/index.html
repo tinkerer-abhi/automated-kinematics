@@ -1,0 +1,1742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Automated Kinematics & Multi-Mode Oscillator Analytics Suite</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .glass-card {
+      background: rgba(30, 41, 59, 0.75);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .chart-container {
+      position: relative;
+      width: 100%;
+      height: 255px;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    input[type=range] {
+      accent-color: #38bdf8;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col antialiased">
+
+  <!-- TOP HEADER -->
+  <header class="border-b border-slate-800 bg-slate-900/85 sticky top-0 z-50 backdrop-blur-md px-4 md:px-6 py-3 flex flex-wrap items-center justify-between gap-3 shadow-xl">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500 to-emerald-400 flex items-center justify-center shadow-lg shadow-sky-500/20">
+        <span class="text-slate-950 font-black text-lg">⚡</span>
+      </div>
+      <div>
+        <h1 class="text-base font-bold text-white tracking-tight flex items-center gap-2">
+          Kinematics & Multi-Mode Oscillator Suite
+          <span class="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">v2.5 Multi-Mode</span>
+        </h1>
+        <p class="text-xs text-slate-400">Tailored Inputs & Physics Metrics for Spring, Pendulum, Cart, Torsion & Free-Fall</p>
+      </div>
+    </div>
+
+    <!-- Navigation & Hardware Indicator -->
+    <div class="flex items-center gap-3">
+      <!-- Hardware Connection Status Pill -->
+      <div id="hwPill" class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-mono bg-slate-800/80 border border-slate-700">
+        <span id="hwDot" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+        <span id="hwText" class="text-slate-300">Scanning Hardware...</span>
+        <button onclick="checkHardware(true)" title="Refresh connection" class="text-slate-400 hover:text-white transition-colors ml-1">🔄</button>
+      </div>
+
+      <!-- Main Tabs -->
+      <div class="flex bg-slate-800/90 p-1 rounded-xl border border-slate-700">
+        <button onclick="switchTab('experiment')" id="tabBtnExp" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-sky-500 text-white shadow-sm transition-all">
+          📊 Experiment & Graphs
+        </button>
+        <button onclick="switchTab('history')" id="tabBtnHist" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all flex items-center gap-1.5">
+          📜 History Tab <span id="histCount" class="px-1.5 py-0.2 rounded-full bg-slate-700 text-[10px] text-slate-300">0</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- HARDWARE ERROR BANNER -->
+  <div id="hwErrorBanner" class="hidden mx-4 md:mx-6 mt-4 p-4 rounded-xl bg-rose-950/85 border border-rose-600/60 shadow-xl flex items-start justify-between gap-3 animate-fade-in">
+    <div class="flex items-start gap-3">
+      <div class="text-2xl mt-0.5">⚠️</div>
+      <div>
+        <h2 class="text-sm font-bold text-rose-200" id="hwErrorTitle">Hardware Connection Notice</h2>
+        <p class="text-xs text-rose-300/90 mt-1 leading-relaxed whitespace-pre-line" id="hwErrorMsg">
+          No Arduino Uno or HC-SR04 sensor was detected on your USB/COM ports.
+        </p>
+        <div class="flex gap-2 mt-2.5">
+          <button onclick="checkHardware(true)" class="px-3 py-1 rounded-md text-xs font-semibold bg-rose-700 hover:bg-rose-600 text-white transition-all">
+            🔄 Retry Detection
+          </button>
+          <button onclick="switchExecutionMode('upload')" class="px-3 py-1 rounded-md text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all">
+            📂 Use CSV Upload Mode Instead
+          </button>
+          <button onclick="runSimulation()" class="px-3 py-1 rounded-md text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all">
+            🧪 Run Demo Simulator
+          </button>
+        </div>
+      </div>
+    </div>
+    <button onclick="document.getElementById('hwErrorBanner').classList.add('hidden')" class="text-rose-400 hover:text-rose-200 text-sm font-bold p-1">✕</button>
+  </div>
+
+  <!-- SUCCESS BANNER -->
+  <div id="successBanner" class="hidden mx-4 md:mx-6 mt-4 p-3 rounded-xl bg-emerald-950/80 border border-emerald-600/60 shadow-lg flex items-center justify-between text-xs text-emerald-200">
+    <div class="flex items-center gap-2">
+      <span>✅</span>
+      <span id="successMsg">Experiment completed successfully!</span>
+    </div>
+    <button onclick="document.getElementById('successBanner').classList.add('hidden')" class="text-emerald-400 hover:text-emerald-200 font-bold">✕</button>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- TAB 1: EXPERIMENT CONTROLS & GRAPHS -->
+  <!-- ========================================================================= -->
+  <main id="tabExperiment" class="flex-1 max-w-[1600px] w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- LEFT COLUMN: Mode Selector & Tailored Inputs (4 Cols) -->
+    <div class="lg:col-span-4 space-y-4">
+
+      <!-- 1. APPARATUS / OSCILLATOR MODE SELECTOR -->
+      <div class="glass-card rounded-2xl p-4 shadow-xl">
+        <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5">
+          Select Oscillator Apparatus
+        </label>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+          <button onclick="selectOscillatorMode('spring')" id="btnOscSpring" class="p-2.5 rounded-xl text-xs font-bold transition-all text-left border bg-sky-500/20 text-sky-200 border-sky-400/50 shadow-sm flex flex-col gap-1">
+            <span class="text-base">🌀</span>
+            <span>1. Vertical Spring</span>
+          </button>
+          <button onclick="selectOscillatorMode('pendulum')" id="btnOscPendulum" class="p-2.5 rounded-xl text-xs font-semibold transition-all text-left border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 flex flex-col gap-1">
+            <span class="text-base">⏳</span>
+            <span>2. Simple Pendulum</span>
+          </button>
+          <button onclick="selectOscillatorMode('cart')" id="btnOscCart" class="p-2.5 rounded-xl text-xs font-semibold transition-all text-left border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 flex flex-col gap-1">
+            <span class="text-base">🛒</span>
+            <span>3. Dynamics Cart</span>
+          </button>
+          <button onclick="selectOscillatorMode('torsion')" id="btnOscTorsion" class="p-2.5 rounded-xl text-xs font-semibold transition-all text-left border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 flex flex-col gap-1">
+            <span class="text-base">💿</span>
+            <span>4. Torsion Disc</span>
+          </button>
+          <button onclick="selectOscillatorMode('freefall')" id="btnOscFreefall" class="p-2.5 rounded-xl text-xs font-semibold transition-all text-left border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 flex flex-col gap-1 col-span-2 sm:col-span-1">
+            <span class="text-base">🪂</span>
+            <span>5. Free-Fall Drop</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. DATA SOURCE MODE: Live / CSV Upload / Simulator -->
+      <div class="glass-card rounded-2xl p-3 shadow-xl">
+        <div class="grid grid-cols-3 gap-1.5 p-1 bg-slate-900 rounded-xl border border-slate-800">
+          <button onclick="switchExecutionMode('live')" id="btnModeLive" class="py-2 rounded-lg text-xs font-bold bg-sky-500 text-white transition-all shadow-sm">
+            🔴 Live Hardware
+          </button>
+          <button onclick="switchExecutionMode('upload')" id="btnModeUpload" class="py-2 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all">
+            📂 Upload CSV
+          </button>
+          <button onclick="switchExecutionMode('sim')" id="btnModeSim" class="py-2 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all">
+            🧪 Simulator
+          </button>
+        </div>
+      </div>
+
+      <!-- 3. DYNAMIC MODE INPUTS CONTAINER -->
+      <div class="glass-card rounded-2xl p-5 shadow-xl border border-sky-500/20 space-y-4" id="modeInputContainer">
+
+        <!-- Header of Mode Inputs -->
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+          <span class="text-xs font-bold text-sky-400 uppercase tracking-wider" id="modeConfigTitle">Vertical Spring Parameters</span>
+          <span class="text-[11px] font-mono text-slate-400" id="modeConfigBadge">Required Inputs</span>
+        </div>
+
+        <!-- PARAMETER: Mass (m) - present on all modes with mode-specific label -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="text-xs font-bold text-white flex items-center gap-1.5" id="labelMass">
+              <span>⚖️</span> Oscillating Mass (m):
+            </label>
+            <span class="text-xs font-mono text-sky-300 bg-sky-950/60 px-2 py-0.5 rounded border border-sky-800" id="massDisplay">
+              200.0 g (0.200 kg)
+            </span>
+          </div>
+          <div class="relative mb-2">
+            <input type="number" id="massInput" value="200" min="10" max="2500" step="5"
+                   class="w-full bg-slate-900/90 border border-slate-700 rounded-xl px-4 py-2 text-base font-bold font-mono text-white focus:outline-none focus:border-sky-400 transition-all"
+                   oninput="onMassChange(this.value)">
+            <span class="absolute right-4 top-2 text-xs font-bold text-slate-400">GRAMS</span>
+          </div>
+          <div class="grid grid-cols-5 gap-1 mb-2">
+            <button onclick="setMass(50)" class="py-1 rounded-lg text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300">50g</button>
+            <button onclick="setMass(100)" class="py-1 rounded-lg text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300">100g</button>
+            <button onclick="setMass(200)" class="py-1 rounded-lg text-[11px] font-bold bg-sky-600/40 text-sky-200 border border-sky-500/40">200g</button>
+            <button onclick="setMass(350)" class="py-1 rounded-lg text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300">350g</button>
+            <button onclick="setMass(500)" class="py-1 rounded-lg text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300">500g</button>
+          </div>
+          <input type="range" id="massSlider" min="20" max="800" value="200" step="5" class="w-full cursor-pointer" oninput="onMassChange(this.value)">
+        </div>
+
+        <!-- MODE SPECIFIC FIELD 1: Cord Length L (Pendulum only) -->
+        <div id="fieldPendulumLength" class="hidden">
+          <div class="flex justify-between items-center mb-1">
+            <label class="text-xs font-bold text-white flex items-center gap-1.5">
+              <span>📏</span> Cord Length (L):
+            </label>
+            <span class="text-xs font-mono text-amber-300" id="pendLengthDisplay">60.0 cm (0.60 m)</span>
+          </div>
+          <div class="relative mb-2">
+            <input type="number" id="pendLengthInput" value="60" min="15" max="250" step="1"
+                   class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-sm font-mono text-white focus:outline-none focus:border-sky-400"
+                   oninput="onPendLengthChange(this.value)">
+            <span class="absolute right-4 top-2 text-xs font-bold text-slate-400">CM</span>
+          </div>
+          <input type="range" id="pendLengthSlider" min="20" max="150" value="60" step="1" class="w-full cursor-pointer" oninput="onPendLengthChange(this.value)">
+          <p class="text-[11px] text-slate-400 mt-1">Measured from pivot to mass center using your Stanley tape.</p>
+        </div>
+
+        <!-- MODE SPECIFIC FIELD 2: Disc Radius & Target Arm (Torsion only) -->
+        <div id="fieldTorsionSpecs" class="hidden space-y-3">
+          <div>
+            <div class="flex justify-between items-center mb-1">
+              <label class="text-xs font-bold text-white flex items-center gap-1.5">
+                <span>⭕</span> Disc Outer Radius (R):
+              </label>
+              <span class="text-xs font-mono text-indigo-300" id="discRadiusDisplay">8.0 cm</span>
+            </div>
+            <input type="range" id="discRadiusSlider" min="3" max="20" value="8" step="0.5" class="w-full cursor-pointer" oninput="document.getElementById('discRadiusDisplay').textContent = `${this.value} cm`">
+          </div>
+          <div>
+            <div class="flex justify-between items-center mb-1">
+              <label class="text-xs font-bold text-white flex items-center gap-1.5">
+                <span>🎯</span> Tangential Target Arm (r):
+              </label>
+              <span class="text-xs font-mono text-indigo-300" id="armRadiusDisplay">7.5 cm</span>
+            </div>
+            <input type="range" id="armRadiusSlider" min="3" max="15" value="7.5" step="0.5" class="w-full cursor-pointer" oninput="document.getElementById('armRadiusDisplay').textContent = `${this.value} cm`">
+          </div>
+        </div>
+
+        <!-- MODE SPECIFIC FIELD 3: Drop Height h (Free-Fall — measured from sensor, shown as info) -->
+        <div id="fieldFreefallHeight" class="hidden">
+          <div class="flex justify-between items-center mb-1">
+            <label class="text-xs font-bold text-white flex items-center gap-1.5">
+              <span>📐</span> Drop Distance (h):
+            </label>
+            <span class="text-xs font-mono text-emerald-300">Measured from sensor data</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-1">Drop distance is automatically calculated from the sensor's position readings during the fall. No manual input needed.</p>
+        </div>
+
+        <!-- MODE SPECIFIC FIELD 4: Spring Preset (Spring & Cart only) -->
+        <div id="fieldSpringPreset">
+          <div class="flex justify-between items-center mb-1">
+            <label class="text-xs font-bold text-white flex items-center gap-1.5" id="labelSpringPreset">
+              <span>⚙️</span> Spring Selection:
+            </label>
+            <span class="text-xs font-mono text-emerald-300" id="springPresetDisplay">Auto-Derived</span>
+          </div>
+          <select id="springPresetSelect" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-400">
+            <option value="15.0">Standard 7x51mm Extension Spring (~15 N/m)</option>
+            <option value="32.0">Stiff 9x35mm Extension Spring (~32 N/m)</option>
+            <option value="8.0">Soft Extension Spring (~8 N/m)</option>
+            <option value="50.0">High-Stiffness Dual Springs (~50 N/m)</option>
+          </select>
+          <p class="text-[11px] text-slate-400 mt-1" id="tipSpring">Actual dynamic stiffness is derived from frequency: k = m·ω₀².</p>
+        </div>
+
+        <!-- MODE EXPLANATION CALLOUT -->
+        <div class="rounded-xl p-3 bg-sky-950/40 border border-sky-800/40 text-xs text-sky-200 leading-relaxed" id="modeExplanationBox">
+          <div class="font-bold text-sky-400 mb-0.5" id="modeExplanationTitle">💡 Vertical Spring Oscillator</div>
+          <div id="modeExplanationText">Measures vertical displacement $x(t)$ along acoustic boresight. Auto-calculates dynamic spring stiffness $k = m \omega_0^2$ directly from wave frequency.</div>
+        </div>
+
+      </div>
+
+      <!-- 4. EXECUTION SECTIONS (Live / Upload / Simulator) -->
+
+      <!-- A: Live Hardware Section -->
+      <div id="sectionLive" class="glass-card rounded-2xl p-5 shadow-xl space-y-3.5">
+        <div class="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-400">
+          <span>🔌 Live Acquisition Controls</span>
+          <span class="text-[11px] font-mono text-emerald-400">115200 Baud</span>
+        </div>
+
+        <!-- Direct Web Serial (Browser USB - Cloud & Online Deployment Ready!) -->
+        <div class="p-3.5 rounded-xl bg-gradient-to-br from-sky-950/60 to-slate-900 border border-sky-500/30 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-sky-300 flex items-center gap-1.5">
+              <span>🌐</span> Direct Web Serial (Browser USB):
+            </span>
+            <span id="webSerialBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
+              Not Connected
+            </span>
+          </div>
+          <button type="button" onclick="toggleWebSerial()" id="btnWebSerial" class="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white transition-all flex items-center justify-center gap-2 shadow-md shadow-sky-900/40">
+            <span>🔌 Connect Arduino (Web Serial)</span>
+          </button>
+          <p class="text-[10px] text-slate-400 leading-tight" id="webSerialTip">
+            <strong class="text-sky-300">Cloud & Online Ready:</strong> Chrome & Edge read your Arduino directly via USB with zero software install on your PC!
+          </p>
+        </div>
+
+        <!-- Local Server Port (Fallback when running local Python server) -->
+        <div id="localPortBox">
+          <div class="flex justify-between items-center mb-1">
+            <label class="text-xs font-semibold text-slate-300">Local COM Port (Desktop Mode):</label>
+            <span class="text-[10px] text-slate-500 font-mono">Optional</span>
+          </div>
+          <div class="flex gap-2">
+            <select id="livePortSelect" class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-400 font-mono">
+              <option value="AUTO">AUTO (Search Arduino Uno)</option>
+            </select>
+            <button onclick="checkHardware(true)" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold">🔍 Scan</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="flex justify-between text-xs font-semibold text-slate-300 mb-1">
+            <span>Duration:</span>
+            <span class="font-mono text-sky-400" id="liveDurDisplay">16.0 s (~640 pings)</span>
+          </div>
+          <input type="range" id="liveDurSlider" min="5" max="30" value="16" step="1" class="w-full cursor-pointer" oninput="document.getElementById('liveDurDisplay').textContent = `${this.value}.0 s (~${this.value*40} pings)`">
+        </div>
+
+        <!-- Live Progress Indicator -->
+        <div id="liveProgressContainer" class="hidden space-y-1.5 p-3 rounded-xl bg-slate-900/90 border border-emerald-500/30">
+          <div class="flex justify-between text-xs font-bold">
+            <span id="liveProgressStatus" class="text-emerald-300 flex items-center gap-1.5">
+              <span class="animate-pulse">🔴</span> Streaming Sensor...
+            </span>
+            <span id="liveProgressPct" class="font-mono text-white">0%</span>
+          </div>
+          <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+            <div id="liveProgressBar" class="bg-gradient-to-r from-sky-500 via-teal-400 to-emerald-400 h-full w-0 transition-all duration-100"></div>
+          </div>
+          <div class="flex justify-between text-[10px] font-mono text-slate-400 pt-0.5">
+            <span id="liveProgressPings">Samples: 0</span>
+            <span id="liveProgressLatest">d = --</span>
+          </div>
+        </div>
+
+        <button onclick="startLiveExperiment()" id="btnStartLive" class="w-full py-3 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-lg shadow-emerald-900/40 flex items-center justify-center gap-2">
+          <span>🚀 START LIVE EXPERIMENT</span>
+        </button>
+      </div>
+
+      <!-- B: CSV Upload Section -->
+      <div id="sectionUpload" class="hidden glass-card rounded-2xl p-5 shadow-xl space-y-3.5">
+        <div class="text-xs font-bold uppercase tracking-wider text-slate-400">📂 Upload Existing Run (.CSV)</div>
+        <div id="dropZone" class="border-2 border-dashed border-slate-700 hover:border-sky-500/60 rounded-xl p-5 text-center transition-all bg-slate-900/50 cursor-pointer" onclick="document.getElementById('fileUploadInput').click()">
+          <div class="text-2xl mb-1">📄</div>
+          <div class="text-xs font-bold text-slate-200" id="dropFileName">Click or Drag & Drop .CSV File Here</div>
+          <p class="text-[11px] text-slate-500 mt-1">Accepts (time_sec, distance_m)</p>
+          <input type="file" id="fileUploadInput" accept=".csv" class="hidden" onchange="onFileSelected(event)">
+        </div>
+        <button onclick="uploadAndProcessCSV()" id="btnUploadProcess" class="w-full py-3 rounded-xl text-sm font-bold bg-sky-600 hover:bg-sky-500 text-white transition-all shadow-lg shadow-sky-900/40">
+          <span>📊 PROCESS & ANALYZE CSV</span>
+        </button>
+      </div>
+
+      <!-- C: Simulator Section -->
+      <div id="sectionSim" class="hidden glass-card rounded-2xl p-5 shadow-xl space-y-3.5">
+        <div class="text-xs font-bold uppercase tracking-wider text-slate-400">🧪 Hardware Simulator (Demo)</div>
+        <p class="text-xs text-slate-400">Runs full numerical ODE integration matching the selected oscillator mode.</p>
+        <button onclick="runSimulation()" class="w-full py-3 rounded-xl text-sm font-bold bg-purple-600 hover:bg-purple-500 text-white transition-all shadow-lg shadow-purple-900/40">
+          <span>⚡ GENERATE SIMULATION RUN</span>
+        </button>
+      </div>
+
+    </div>
+
+    <!-- RIGHT COLUMN: Tailored Mode Metrics & 4 Graphs (8 Cols) -->
+    <div class="lg:col-span-8 space-y-4">
+
+      <!-- MODE-SPECIFIC KPI METRICS CARDS (Dynamically Injected via JS) -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3" id="kpiContainer">
+        <!-- Injected via updateKPICards() -->
+      </div>
+
+      <!-- 4-PANEL TAILORED GRAPH GRID -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+        <!-- GRAPH 1 -->
+        <div class="glass-card rounded-2xl p-4 shadow-xl">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-sky-400 flex items-center gap-1.5" id="graphTitle1">
+              <span>📈</span> 1. Position Trajectory
+            </h3>
+            <span class="text-[11px] font-mono text-slate-400" id="graphEq1">x(t)</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="chart1"></canvas>
+          </div>
+          <div class="flex items-center justify-between text-[11px] text-slate-400 mt-2 px-1" id="graphLegend1">
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-sky-400 inline-block"></span> Measured</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-emerald-400 border-dotted inline-block"></span> Envelope</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-rose-400 border-dashed inline-block"></span> Equilibrium</span>
+          </div>
+        </div>
+
+        <!-- GRAPH 2 -->
+        <div class="glass-card rounded-2xl p-4 shadow-xl">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5" id="graphTitle2">
+              <span>⚡</span> 2. Derivatives: Velocity & Acceleration
+            </h3>
+            <span class="text-[11px] font-mono text-slate-400" id="graphEq2">v(t) & a(t)</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="chart2"></canvas>
+          </div>
+          <div class="flex items-center justify-between text-[11px] text-slate-400 mt-2 px-1" id="graphLegend2">
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-cyan-400 inline-block"></span> Velocity</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-amber-400 inline-block"></span> Acceleration</span>
+          </div>
+        </div>
+
+        <!-- GRAPH 3 -->
+        <div class="glass-card rounded-2xl p-4 shadow-xl">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5" id="graphTitle3">
+              <span>🌀</span> 3. Phase-Space Portrait
+            </h3>
+            <span class="text-[11px] font-mono text-slate-400" id="graphEq3">Dissipation Spiral</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="chart3"></canvas>
+          </div>
+          <div class="flex items-center justify-between text-[11px] text-slate-400 mt-2 px-1" id="graphLegend3">
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-gradient-to-r from-fuchsia-500 to-amber-400 inline-block"></span> Trajectory</span>
+            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span> Attractor (0,0)</span>
+          </div>
+        </div>
+
+        <!-- GRAPH 4 -->
+        <div class="glass-card rounded-2xl p-4 shadow-xl">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5" id="graphTitle4">
+              <span>🔋</span> 4. Mechanical Energy Conservation
+            </h3>
+            <span class="text-[11px] font-mono text-slate-400" id="graphEq4">T + V = E</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="chart4"></canvas>
+          </div>
+          <div class="flex items-center justify-between text-[11px] text-slate-400 mt-2 px-1" id="graphLegend4">
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-emerald-400 inline-block"></span> Kinetic (T)</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-sky-400 inline-block"></span> Potential (V)</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-rose-500 inline-block"></span> Total (E)</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Action Footer -->
+      <div class="flex flex-wrap items-center justify-between gap-3 p-3 glass-card rounded-xl text-xs text-slate-300">
+        <span id="activeRunInfo">Dataset: Demo Initial Run</span>
+        <div class="flex items-center gap-2">
+          <button onclick="downloadActiveCSV()" id="btnDownloadCSV" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 flex items-center gap-1.5 transition-all">
+            📥 Download Raw Sensor CSV
+          </button>
+          <button onclick="downloadProcessedCSV()" id="btnDownloadProcessedCSV" class="px-3 py-1.5 rounded-lg bg-emerald-950/70 hover:bg-emerald-900 text-emerald-300 border border-emerald-700/80 flex items-center gap-1.5 transition-all font-medium">
+            📊 Download Full Graph Data (All 4 Plots)
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ========================================================================= -->
+  <!-- TAB 2: HISTORY ARCHIVE -->
+  <!-- ========================================================================= -->
+  <main id="tabHistory" class="hidden flex-1 max-w-[1400px] w-full mx-auto p-4 md:p-6 space-y-4">
+    <div class="flex items-center justify-between">
+      <div>
+        <h2 class="text-lg font-bold text-white tracking-tight">Experiment History & CSV Archives</h2>
+        <p class="text-xs text-slate-400">All live recordings, uploaded CSVs, and simulation runs saved on disk.</p>
+      </div>
+      <button onclick="loadHistoryList()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5">
+        🔄 Refresh History
+      </button>
+    </div>
+
+    <!-- History Table -->
+    <div class="glass-card rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-slate-900/90 text-slate-400 font-mono uppercase border-b border-slate-800">
+            <tr>
+              <th class="py-3 px-4">Apparatus Mode</th>
+              <th class="py-3 px-4">Date & Time</th>
+              <th class="py-3 px-4">Run Name</th>
+              <th class="py-3 px-4">Mass</th>
+              <th class="py-3 px-4">Key Derived Parameter</th>
+              <th class="py-3 px-4">Period / Time</th>
+              <th class="py-3 px-4">Quality / Error</th>
+              <th class="py-3 px-4 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="historyTableBody" class="divide-y divide-slate-800 text-slate-200 font-mono">
+            <tr>
+              <td colspan="8" class="py-8 text-center text-slate-500 font-sans">Loading experiment history...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+
+  <!-- ========================================================================= -->
+  <!-- FRONTEND SCRIPT LOGIC & MODE CONTROLLER -->
+  <!-- ========================================================================= -->
+  <script>
+    let activeMode = 'spring'; // 'spring', 'pendulum', 'cart', 'torsion', 'freefall'
+    let executionMode = 'live'; // 'live', 'upload', 'sim'
+    let currentMassG = 200.0;
+    let activeDataset = null;
+    let activeCSVFilename = null;
+    let activeProcessedCSVFilename = null;
+    let selectedUploadFile = null;
+
+    // Mode Definitions: Inputs and Explanations
+    const MODE_CONFIGS = {
+      spring: {
+        title: "Vertical Spring Oscillator",
+        badge: "1D Z-Axis Hooke's Law",
+        massLabel: "⚖️ Oscillating Mass (m):",
+        tip: "Dynamic spring stiffness k = m·ω₀² is derived directly from wave frequency.",
+        explanation: "Measures 1D vertical displacement along acoustic boresight. Auto-calculates dynamic spring stiffness k = m·ω₀² from frequency, damping ratio ζ, and energy loss.",
+        showLength: false,
+        showTorsion: false,
+        showFreefall: false,
+        showSpring: true
+      },
+      pendulum: {
+        title: "Simple Damped Pendulum",
+        badge: "Small-Angle Arc Dynamics",
+        massLabel: "⚖️ Pendulum Bob Mass (m):",
+        tip: "Local gravity g = L·ω₀² is derived directly from measured pendulum period!",
+        explanation: "Aimed horizontally at resting bob. Uses cord length L to calculate local gravity g = L·ω₀², effective restoring factor k_eff = mg/L, and angular deflection θ(t).",
+        showLength: true,
+        showTorsion: false,
+        showFreefall: false,
+        showSpring: false
+      },
+      cart: {
+        title: "Horizontal Dynamics Cart",
+        badge: "1D Track with Dual Springs",
+        massLabel: "⚖️ Cart & Vane Mass (m):",
+        tip: "Measures combined stiffness k_total = k1 + k2 without gravitational sag.",
+        explanation: "Tracks linear cart displacement along track. Derives combined dual-spring constant k_total = m·ω₀², individual spring estimate k_single, and rolling damping.",
+        showLength: false,
+        showTorsion: false,
+        showFreefall: false,
+        showSpring: true
+      },
+      torsion: {
+        title: "Torsional Rotary Oscillator",
+        badge: "Rotary θ-Axis Disc",
+        massLabel: "⚖️ Inertia Disc Mass (M):",
+        tip: "Calculates disc inertia I = ½MR² and wire torsion modulus κ = I·ω₀².",
+        explanation: "Aimed tangentially at radius r. Computes moment of inertia I = ½MR², wire torsion modulus κ = I·ω₀², and peak angular deflection θ_max.",
+        showLength: false,
+        showTorsion: true,
+        showFreefall: false,
+        showSpring: false
+      },
+      freefall: {
+        title: "Free-Fall Kinematics Column",
+        badge: "1D Downward g-Field Drop",
+        massLabel: "⚖️ Dropped Object Mass (m):",
+        tip: "Calculates gravitational acceleration g = d²y/dt² and Torricelli velocity.",
+        explanation: "Mounted at top looking downward. Directly derives local acceleration due to gravity g = d²y/dt², impact velocity v_impact, and fall time.",
+        showLength: false,
+        showTorsion: false,
+        showFreefall: true,
+        showSpring: false
+      }
+    };
+
+    window.addEventListener('DOMContentLoaded', () => {
+      checkHardware(false);
+      loadHistoryList();
+      selectOscillatorMode('spring');
+      window.addEventListener('resize', renderAllCharts);
+    });
+
+    // --- OSCILLATOR MODE SWITCHER ---
+    function selectOscillatorMode(mode) {
+      activeMode = mode;
+      const conf = MODE_CONFIGS[mode];
+
+      // Update Button Styles
+      ['spring', 'pendulum', 'cart', 'torsion', 'freefall'].forEach(m => {
+        const btn = document.getElementById('btnOsc' + m.charAt(0).toUpperCase() + m.slice(1));
+        if (m === mode) {
+          btn.className = "p-2.5 rounded-xl text-xs font-bold transition-all text-left border bg-sky-500/20 text-sky-200 border-sky-400/50 shadow-sm flex flex-col gap-1";
+        } else {
+          btn.className = "p-2.5 rounded-xl text-xs font-semibold transition-all text-left border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 flex flex-col gap-1";
+        }
+      });
+
+      // Update Mode Configuration Titles & Explanations
+      document.getElementById('modeConfigTitle').textContent = conf.title;
+      document.getElementById('modeConfigBadge').textContent = conf.badge;
+      document.getElementById('labelMass').innerHTML = `<span>⚖️</span> ${conf.massLabel}`;
+      document.getElementById('modeExplanationTitle').textContent = `💡 ${conf.title}`;
+      document.getElementById('modeExplanationText').textContent = conf.explanation;
+
+      // Toggle Input Fields
+      toggleDisplay('fieldPendulumLength', conf.showLength);
+      toggleDisplay('fieldTorsionSpecs', conf.showTorsion);
+      toggleDisplay('fieldFreefallHeight', conf.showFreefall);
+      toggleDisplay('fieldSpringPreset', conf.showSpring);
+
+      // Re-run simulation or update active view for chosen mode
+      runSimulation();
+    }
+
+    function toggleDisplay(elementId, show) {
+      const el = document.getElementById(elementId);
+      if (show) el.classList.remove('hidden'); else el.classList.add('hidden');
+    }
+
+    // --- EXECUTION MODE SWITCHER (Live / Upload / Simulator) ---
+    function switchExecutionMode(mode) {
+      executionMode = mode;
+      document.getElementById('sectionLive').classList.add('hidden');
+      document.getElementById('sectionUpload').classList.add('hidden');
+      document.getElementById('sectionSim').classList.add('hidden');
+
+      ['btnModeLive', 'btnModeUpload', 'btnModeSim'].forEach(id => {
+        document.getElementById(id).className = "py-2 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all";
+      });
+
+      if (mode === 'live') {
+        document.getElementById('sectionLive').classList.remove('hidden');
+        document.getElementById('btnModeLive').className = "py-2 rounded-lg text-xs font-bold bg-sky-500 text-white transition-all shadow-sm";
+      } else if (mode === 'upload') {
+        document.getElementById('sectionUpload').classList.remove('hidden');
+        document.getElementById('btnModeUpload').className = "py-2 rounded-lg text-xs font-bold bg-sky-500 text-white transition-all shadow-sm";
+      } else {
+        document.getElementById('sectionSim').classList.remove('hidden');
+        document.getElementById('btnModeSim').className = "py-2 rounded-lg text-xs font-bold bg-sky-500 text-white transition-all shadow-sm";
+      }
+    }
+
+    function switchTab(tab) {
+      if (tab === 'experiment') {
+        document.getElementById('tabExperiment').classList.remove('hidden');
+        document.getElementById('tabHistory').classList.add('hidden');
+        document.getElementById('tabBtnExp').className = "px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-sky-500 text-white shadow-sm transition-all";
+        document.getElementById('tabBtnHist').className = "px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all flex items-center gap-1.5";
+        renderAllCharts();
+      } else {
+        document.getElementById('tabExperiment').classList.add('hidden');
+        document.getElementById('tabHistory').classList.remove('hidden');
+        document.getElementById('tabBtnExp').className = "px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all";
+        document.getElementById('tabBtnHist').className = "px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-sky-500 text-white shadow-sm transition-all flex items-center gap-1.5";
+        loadHistoryList();
+      }
+    }
+
+    // --- INPUT HANDLERS ---
+    function setMass(grams) {
+      currentMassG = parseFloat(grams);
+      document.getElementById('massInput').value = currentMassG;
+      document.getElementById('massSlider').value = currentMassG;
+      updateMassDisplay();
+      if (executionMode === 'sim') runSimulation();
+    }
+
+    function onMassChange(val) {
+      const g = parseFloat(val);
+      if (!isNaN(g) && g > 0) {
+        currentMassG = g;
+        document.getElementById('massInput').value = currentMassG;
+        document.getElementById('massSlider').value = Math.min(800, g);
+        updateMassDisplay();
+        if (executionMode === 'sim') runSimulation();
+      }
+    }
+
+    function updateMassDisplay() {
+      const kg = currentMassG / 1000.0;
+      document.getElementById('massDisplay').textContent = `${currentMassG.toFixed(1)} g (${kg.toFixed(3)} kg)`;
+    }
+
+    function onPendLengthChange(val) {
+      const cm = parseFloat(val);
+      if (!isNaN(cm) && cm > 0) {
+        document.getElementById('pendLengthInput').value = cm;
+        document.getElementById('pendLengthSlider').value = cm;
+        document.getElementById('pendLengthDisplay').textContent = `${cm.toFixed(1)} cm (${(cm/100).toFixed(2)} m)`;
+        if (executionMode === 'sim') runSimulation();
+      }
+    }
+
+    // --- HARDWARE POLLING ---
+    async function checkHardware(showAlert = false) {
+      const dot = document.getElementById('hwDot');
+      const text = document.getElementById('hwText');
+      const select = document.getElementById('livePortSelect');
+
+      // 1. If Web Serial is active, preserve green status!
+      if (isWebSerialConnected) {
+        if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400";
+        if (text) text.textContent = "Web Serial Active (115200)";
+        document.getElementById('hwErrorBanner').classList.add('hidden');
+        return;
+      }
+
+      if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse";
+      if (text) text.textContent = "Scanning...";
+
+      const isCloud = window.location.protocol === 'https:' || (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1');
+
+      try {
+        const res = await fetch('/api/ports');
+        const data = await res.json();
+
+        if (select) {
+          select.innerHTML = '';
+          if (isCloud) {
+            select.innerHTML = '<option value="WEBSERIAL">Browser Web Serial (Click Connect Above)</option>';
+          } else {
+            select.innerHTML = '<option value="AUTO">AUTO (Search Arduino Uno)</option>';
+          }
+
+          data.ports.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.device;
+            opt.textContent = `${p.device} (${p.description})`;
+            if (p.is_arduino) opt.selected = true;
+            select.appendChild(opt);
+          });
+        }
+
+        if (data.hardware_connected) {
+          if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400";
+          if (text) text.textContent = `Arduino Uno (${data.recommended_port})`;
+          document.getElementById('hwErrorBanner').classList.add('hidden');
+          if (showAlert) alert(`Hardware Connected: Found ${data.recommended_port}`);
+        } else if (isCloud) {
+          if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-cyan-400";
+          if (text) text.textContent = "Web Serial Ready (USB)";
+        } else {
+          if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-rose-500";
+          if (text) text.textContent = "Hardware Disconnected";
+          if (showAlert) {
+            showHardwareError("Hardware Not Connected: No Arduino Uno detected on USB/COM ports.");
+          }
+        }
+      } catch (err) {
+        if (isCloud) {
+          if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-cyan-400";
+          if (text) text.textContent = "Web Serial Ready";
+        } else {
+          if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-rose-500";
+          if (text) text.textContent = "Server Offline";
+        }
+      }
+    }
+
+    function showHardwareError(message, title = "Hardware Connection Notice") {
+      const banner = document.getElementById('hwErrorBanner');
+      const titleEl = document.getElementById('hwErrorTitle');
+      if (titleEl) titleEl.textContent = title;
+      document.getElementById('hwErrorMsg').textContent = message;
+      banner.classList.remove('hidden');
+      banner.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function showSuccess(msg) {
+      const banner = document.getElementById('successBanner');
+      document.getElementById('successMsg').textContent = msg;
+      banner.classList.remove('hidden');
+      setTimeout(() => banner.classList.add('hidden'), 8000);
+    }
+
+    // --- BUILD FORM DATA (MODE TAILORED) ---
+    function buildModeFormData() {
+      const formData = new FormData();
+      formData.append('mass_g', currentMassG);
+      formData.append('oscillator_type', activeMode);
+      formData.append('duration_sec', document.getElementById('liveDurSlider').value);
+      formData.append('port', document.getElementById('livePortSelect').value);
+      formData.append('length_cm', document.getElementById('pendLengthInput') ? document.getElementById('pendLengthInput').value : 60.0);
+      formData.append('radius_cm', document.getElementById('discRadiusSlider') ? document.getElementById('discRadiusSlider').value : 8.0);
+      formData.append('arm_cm', document.getElementById('armRadiusSlider') ? document.getElementById('armRadiusSlider').value : 7.5);
+      formData.append('drop_height_cm', document.getElementById('dropHeightSlider') ? document.getElementById('dropHeightSlider').value : 60.0);
+      formData.append('spring_k', document.getElementById('springPresetSelect') ? document.getElementById('springPresetSelect').value : 15.0);
+      return formData;
+    }
+
+    // --- WEB SERIAL API (BROWSER DIRECT USB - ZERO SOFTWARE INSTALL) ---
+    let webSerialPort = null;
+    let isWebSerialConnected = false;
+
+    function isWebSerialSupported() {
+      return 'serial' in navigator;
+    }
+
+    async function toggleWebSerial() {
+      if (isWebSerialConnected) {
+        await disconnectWebSerial();
+      } else {
+        await connectWebSerial();
+      }
+    }
+
+    async function connectWebSerial() {
+      if (!isWebSerialSupported()) {
+        alert("Web Serial is not supported in this browser.\nPlease use Google Chrome, Microsoft Edge, or Opera on Windows, Mac, Linux, or Android.");
+        return;
+      }
+      try {
+        webSerialPort = await navigator.serial.requestPort();
+        await webSerialPort.open({ baudRate: 115200 });
+        isWebSerialConnected = true;
+        updateWebSerialUI(true);
+        showSuccess("Arduino Connected via Web Serial at 115200 baud! Ready to record.");
+        document.getElementById('hwErrorBanner').classList.add('hidden');
+      } catch (err) {
+        console.error("Web Serial connection failed:", err);
+        if (err.name !== 'NotFoundError') {
+          showHardwareError(`Web Serial Error: ${err.message}. If port is locked, close Arduino IDE Serial Monitor.`);
+        }
+      }
+    }
+
+    async function disconnectWebSerial() {
+      if (webSerialPort) {
+        try {
+          await webSerialPort.close();
+        } catch (e) {
+          console.warn("Port close warning:", e);
+        }
+        webSerialPort = null;
+        isWebSerialConnected = false;
+        updateWebSerialUI(false);
+      }
+    }
+
+    function updateWebSerialUI(connected) {
+      const badge = document.getElementById('webSerialBadge');
+      const btn = document.getElementById('btnWebSerial');
+      const dot = document.getElementById('hwDot');
+      const text = document.getElementById('hwText');
+
+      if (connected) {
+        badge.className = "text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold";
+        badge.textContent = "CONNECTED (115200)";
+        btn.className = "w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/30 transition-all flex items-center justify-center gap-2";
+        btn.innerHTML = `<span>🔌 Disconnect Web Serial</span>`;
+        if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400";
+        if (text) text.textContent = "Web Serial Active (115200)";
+        document.getElementById('hwErrorBanner').classList.add('hidden');
+      } else {
+        badge.className = "text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700";
+        badge.textContent = "Not Connected";
+        btn.className = "w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white transition-all flex items-center justify-center gap-2 shadow-md shadow-sky-900/40";
+        btn.innerHTML = `<span>🔌 Connect Arduino (Web Serial)</span>`;
+        if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-amber-400";
+        if (text) text.textContent = "Web Serial Ready";
+      }
+    }
+
+    // --- LIVE EXPERIMENT (DUAL ENGINE: WEB SERIAL OR LOCAL COM PORT) ---
+    async function startLiveExperiment() {
+      const dur = parseFloat(document.getElementById('liveDurSlider').value) || 16.0;
+
+      // 1. IF WEB SERIAL IS CONNECTED, STREAM DIRECTLY VIA BROWSER
+      if (isWebSerialConnected && webSerialPort) {
+        await runWebSerialRecording(dur);
+        return;
+      }
+
+      // 2. OTHERWISE TRY LOCAL PYTHON PYSERIAL (Desktop Mode)
+      const btn = document.getElementById('btnStartLive');
+      btn.disabled = true;
+      btn.innerHTML = `<span class="animate-spin mr-1">⏳</span> RECORDING ${activeMode.toUpperCase()} OSCILLATION...`;
+
+      try {
+        const res = await fetch('/api/live_experiment', {
+          method: 'POST',
+          body: buildModeFormData()
+        });
+
+        if (!res.ok) {
+          const errData = await res.json();
+          showHardwareError(errData.detail || "Hardware error during acquisition.", "Hardware Connection Notice");
+          return;
+        }
+
+        const payload = await res.json();
+        applyDataset(payload);
+        showSuccess(`Live ${activeMode.toUpperCase()} Experiment completed! Saved to ${payload.csv_filename}`);
+        loadHistoryList();
+      } catch (err) {
+        showHardwareError(
+          `External Hardware Not Detected on Cloud Server:\n` +
+          `Because this site is hosted online in the cloud, you must click the blue button above: "🔌 Connect Arduino (Web Serial)" to allow your browser to read your USB cable directly!`,
+          "Browser Connection Required"
+        );
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<span>🚀 START LIVE EXPERIMENT</span>`;
+      }
+    }
+
+    async function runWebSerialRecording(durationSec) {
+      const btn = document.getElementById('btnStartLive');
+      const progressBox = document.getElementById('liveProgressContainer');
+      const progressBar = document.getElementById('liveProgressBar');
+      const progressPct = document.getElementById('liveProgressPct');
+      const progressPings = document.getElementById('liveProgressPings');
+      const progressLatest = document.getElementById('liveProgressLatest');
+
+      btn.disabled = true;
+      btn.innerHTML = `<span class="animate-spin mr-1">⏳</span> RECORDING VIA WEB SERIAL...`;
+      progressBox.classList.remove('hidden');
+      progressBar.style.width = '0%';
+      progressPct.textContent = '0%';
+      document.getElementById('hwErrorBanner').classList.add('hidden');
+
+      const textDecoder = new TextDecoder();
+      let reader = null;
+      let rawLines = [
+        "# Automated Kinematics Tracking System - Web Serial Live Run",
+        "time_sec,sensor_id,distance_m,raw_pulse_us"
+      ];
+      let lineBuffer = "";
+      let initialTimestampUs = null;
+      const startTime = performance.now();
+      const targetDurationMs = durationSec * 1000;
+      let isRecordingDone = false;
+
+      // Clean timeout to cancel reader when durationSec expires
+      const timeoutId = setTimeout(() => {
+        isRecordingDone = true;
+        if (reader) {
+          try { reader.cancel(); } catch (e) {}
+        }
+      }, targetDurationMs + 300);
+
+      try {
+        reader = webSerialPort.readable.getReader();
+
+        while (!isRecordingDone && (performance.now() - startTime < targetDurationMs)) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) {
+            lineBuffer += textDecoder.decode(value, { stream: true });
+            const splitLines = lineBuffer.split("\n");
+            lineBuffer = splitLines.pop(); // keep partial remainder
+
+            for (const line of splitLines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith("#")) continue;
+
+              const parts = trimmed.split(",");
+              if (parts.length >= 3) {
+                const rawT = parseFloat(parts[0]);
+                const sensorId = parseInt(parts[1]) || 1;
+                const distM = parseFloat(parts[2]);
+                const pulseUs = parts.length >= 4 ? parseInt(parts[3]) || 0 : 0;
+
+                if (!isNaN(rawT) && !isNaN(distM)) {
+                  if (initialTimestampUs === null) {
+                    initialTimestampUs = rawT;
+                  }
+                  // Normalize timestamp to relative elapsed seconds
+                  const relTimeSec = (rawT > 100000)
+                    ? (rawT - initialTimestampUs) * 1e-6
+                    : (rawT - initialTimestampUs);
+
+                  rawLines.push(`${relTimeSec.toFixed(6)},${sensorId},${distM.toFixed(5)},${pulseUs}`);
+                  if (distM >= 0) {
+                    progressLatest.textContent = `d = ${distM.toFixed(3)} m`;
+                  }
+                }
+              }
+            }
+          }
+
+          const elapsed = (performance.now() - startTime) / 1000;
+          const pct = Math.min(100, Math.round((elapsed / durationSec) * 100));
+          progressBar.style.width = `${pct}%`;
+          progressPct.textContent = `${pct}%`;
+          progressPings.textContent = `Samples: ${Math.max(0, rawLines.length - 2)}`;
+        }
+      } catch (err) {
+        if (!isRecordingDone) {
+          console.error("Web Serial read error:", err);
+          showHardwareError(`Web Serial read error: ${err.message}`, "Serial Stream Error");
+          return;
+        }
+      } finally {
+        clearTimeout(timeoutId);
+        if (reader) {
+          try {
+            reader.releaseLock();
+          } catch (e) {}
+        }
+        btn.disabled = false;
+        btn.innerHTML = `<span>🚀 START LIVE EXPERIMENT</span>`;
+        setTimeout(() => progressBox.classList.add('hidden'), 2500);
+      }
+
+      const sampleCount = rawLines.length - 2;
+      if (sampleCount < 10) {
+        showHardwareError(
+          `Only ${sampleCount} sensor readings were received from the Arduino.\n\n` +
+          `Common fixes:\n` +
+          `1. Ensure Arduino is running the hc_sr04_tracker sketch at 115200 baud.\n` +
+          `2. CLOSE Arduino IDE Serial Monitor if open (it locks the serial data stream!).\n` +
+          `3. Check HC-SR04 ultrasonic sensor wires: VCC->5V, GND->GND, Trig->Pin 9, Echo->Pin 10.`,
+          "Too Few Readings Captured"
+        );
+        return;
+      }
+
+      // Send raw stream to server for high-precision physics calculations
+      btn.innerHTML = `<span class="animate-spin mr-1">⚡</span> ANALYZING KINEMATICS...`;
+      try {
+        const payloadData = {
+          mass_g: currentMassG,
+          oscillator_type: activeMode,
+          duration_sec: durationSec,
+          length_cm: document.getElementById('pendLengthInput') ? parseFloat(document.getElementById('pendLengthInput').value) : 60.0,
+          radius_cm: document.getElementById('discRadiusSlider') ? parseFloat(document.getElementById('discRadiusSlider').value) : 8.0,
+          arm_cm: document.getElementById('armRadiusSlider') ? parseFloat(document.getElementById('armRadiusSlider').value) : 7.5,
+          drop_height_cm: document.getElementById('dropHeightSlider') ? parseFloat(document.getElementById('dropHeightSlider').value) : 60.0,
+          spring_k: document.getElementById('springPresetSelect') ? parseFloat(document.getElementById('springPresetSelect').value) : 15.0,
+          raw_csv_text: rawLines.join("\n")
+        };
+
+        const res = await fetch('/api/process_stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payloadData)
+        });
+
+        if (!res.ok) {
+          const errData = await res.json();
+          showHardwareError(errData.detail || "Analysis failed on cloud server.", "Kinematics Analysis Error");
+          return;
+        }
+
+        const payload = await res.json();
+        applyDataset(payload);
+        showSuccess(`Web Serial ${activeMode.toUpperCase()} Experiment completed! Saved to ${payload.csv_filename}`);
+        loadHistoryList();
+      } catch (err) {
+        showHardwareError(`Analysis communication error: ${err.message}`, "Server Communication Error");
+      } finally {
+        btn.innerHTML = `<span>🚀 START LIVE EXPERIMENT</span>`;
+      }
+    }
+
+    // --- CSV UPLOAD ---
+    function onFileSelected(event) {
+      const file = event.target.files[0];
+      if (file) {
+        selectedUploadFile = file;
+        document.getElementById('dropFileName').textContent = `Selected: ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
+      }
+    }
+
+    async function uploadAndProcessCSV() {
+      if (!selectedUploadFile) {
+        alert("Please select a .CSV file first.");
+        return;
+      }
+      const btn = document.getElementById('btnUploadProcess');
+      btn.disabled = true;
+      btn.innerHTML = `<span class="animate-spin mr-1">⏳</span> Processing CSV...`;
+
+      const formData = buildModeFormData();
+      formData.append('file', selectedUploadFile);
+
+      try {
+        const res = await fetch('/api/upload_csv', { method: 'POST', body: formData });
+        if (!res.ok) {
+          const err = await res.json();
+          alert(`CSV Processing Error: ${err.detail}`);
+          return;
+        }
+        const payload = await res.json();
+        applyDataset(payload);
+        showSuccess(`CSV Processed Successfully! Saved to ${payload.csv_filename}`);
+        loadHistoryList();
+      } catch (err) {
+        alert(`Upload error: ${err.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<span>📊 PROCESS & ANALYZE CSV</span>`;
+      }
+    }
+
+    // --- SIMULATOR ---
+    async function runSimulation() {
+      try {
+        const res = await fetch('/api/simulate', {
+          method: 'POST',
+          body: buildModeFormData()
+        });
+        const payload = await res.json();
+        applyDataset(payload);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // --- DYNAMIC KPI CARDS & GRAPH TITLES (MODE SPECIFIC) ---
+    function applyDataset(payload) {
+      activeDataset = payload;
+      activeCSVFilename = payload.csv_filename;
+      activeProcessedCSVFilename = payload.processed_csv_filename || (payload.csv_filename ? `processed_${payload.csv_filename}` : null);
+      const m = payload.metrics;
+      const mode = payload.mode || activeMode;
+
+      // 1. INJECT MODE-SPECIFIC KPI METRICS CARDS
+      renderModeKPICards(mode, m);
+
+      // 2. CONFIGURE GRAPH LABELS & UNITS ACCORDING TO MODE
+      configureGraphLabels(mode);
+
+      // 3. RENDER 4 CHARTS
+      renderAllCharts();
+
+      // 4. Update Footer Info
+      document.getElementById('activeRunInfo').textContent = `Dataset: ${payload.csv_filename || 'Active Run'} | Mode: ${mode.toUpperCase()} | ${payload.time.length} points`;
+    }
+
+    function renderModeKPICards(mode, m) {
+      const container = document.getElementById('kpiContainer');
+      let html = '';
+
+      if (mode === 'spring') {
+        html = `
+          <div class="glass-card rounded-xl p-3 border-l-4 border-emerald-400">
+            <div class="text-[11px] font-semibold text-slate-400">Spring Constant (k)</div>
+            <div class="text-lg font-bold text-emerald-300 font-mono">${m.k_effective.toFixed(2)} N/m</div>
+            <div class="text-[10px] text-emerald-400/80 font-mono">Auto-Derived!</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-sky-400">
+            <div class="text-[11px] font-semibold text-slate-400">Frequency (f_d)</div>
+            <div class="text-lg font-bold text-white font-mono">${m.f_d.toFixed(2)} Hz</div>
+            <div class="text-[10px] text-slate-400 font-mono">T = ${m.T_d.toFixed(3)} s</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-amber-400">
+            <div class="text-[11px] font-semibold text-slate-400">Damping Ratio (ζ)</div>
+            <div class="text-lg font-bold text-amber-300 font-mono">${m.damping_ratio_zeta.toFixed(4)}</div>
+            <div class="text-[10px] text-amber-400/80 font-mono">Underdamped</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-indigo-400">
+            <div class="text-[11px] font-semibold text-slate-400">Quality Factor (Q)</div>
+            <div class="text-lg font-bold text-indigo-300 font-mono">${m.quality_factor_Q.toFixed(1)}</div>
+            <div class="text-[10px] text-slate-400 font-mono">R² = ${m.r_squared.toFixed(4)}</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-rose-400">
+            <div class="text-[11px] font-semibold text-slate-400">Damping Coeff (c)</div>
+            <div class="text-lg font-bold text-rose-300 font-mono">${m.damping_coeff_c.toFixed(3)} N·s/m</div>
+            <div class="text-[10px] text-slate-400 font-mono">2·m·γ</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-teal-400">
+            <div class="text-[11px] font-semibold text-slate-400">Energy Loss (%)</div>
+            <div class="text-lg font-bold text-teal-300 font-mono">${m.energy_lost_pct.toFixed(1)}%</div>
+            <div class="text-[10px] text-slate-400 font-mono">E₀ = ${m.e0_mJ.toFixed(1)} mJ</div>
+          </div>
+        `;
+      } else if (mode === 'pendulum') {
+        html = `
+          <div class="glass-card rounded-xl p-3 border-l-4 border-emerald-400">
+            <div class="text-[11px] font-semibold text-slate-400">Derived Gravity (g)</div>
+            <div class="text-lg font-bold text-emerald-300 font-mono">${m.g_measured.toFixed(2)} m/s²</div>
+            <div class="text-[10px] text-emerald-400 font-mono">Err: ${m.g_error_pct.toFixed(1)}% vs 9.81</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-sky-400">
+            <div class="text-[11px] font-semibold text-slate-400">Cord Length (L)</div>
+            <div class="text-lg font-bold text-white font-mono">${m.cord_length_cm.toFixed(1)} cm</div>
+            <div class="text-[10px] text-slate-400 font-mono">T_theory = ${m.T_theory.toFixed(3)}s</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-purple-400">
+            <div class="text-[11px] font-semibold text-slate-400">Measured Period (T_d)</div>
+            <div class="text-lg font-bold text-purple-300 font-mono">${m.T_d.toFixed(3)} s</div>
+            <div class="text-[10px] text-purple-400/80 font-mono">f = ${m.f_d.toFixed(2)} Hz</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-amber-400">
+            <div class="text-[11px] font-semibold text-slate-400">Restoring Factor (k_eff)</div>
+            <div class="text-lg font-bold text-amber-300 font-mono">${m.k_effective.toFixed(2)} N/m</div>
+            <div class="text-[10px] text-amber-400/80 font-mono">mg / L</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-rose-400">
+            <div class="text-[11px] font-semibold text-slate-400">Max Deflection (θ₀)</div>
+            <div class="text-lg font-bold text-rose-300 font-mono">${m.theta_max_deg.toFixed(1)}°</div>
+            <div class="text-[10px] text-slate-400 font-mono">Small angle regime</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-teal-400">
+            <div class="text-[11px] font-semibold text-slate-400">Pendulum Quality (Q)</div>
+            <div class="text-lg font-bold text-teal-300 font-mono">${m.quality_factor_Q.toFixed(1)}</div>
+            <div class="text-[10px] text-slate-400 font-mono">ζ = ${m.damping_ratio_zeta.toFixed(4)}</div>
+          </div>
+        `;
+      } else if (mode === 'cart') {
+        html = `
+          <div class="glass-card rounded-xl p-3 border-l-4 border-emerald-400">
+            <div class="text-[11px] font-semibold text-slate-400">Combined Springs (k_total)</div>
+            <div class="text-lg font-bold text-emerald-300 font-mono">${m.k_total.toFixed(2)} N/m</div>
+            <div class="text-[10px] text-emerald-400/80 font-mono">k₁ + k₂</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-sky-400">
+            <div class="text-[11px] font-semibold text-slate-400">Single Spring Est.</div>
+            <div class="text-lg font-bold text-white font-mono">${m.k_single_est.toFixed(2)} N/m</div>
+            <div class="text-[10px] text-slate-400 font-mono">k_total / 2</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-purple-400">
+            <div class="text-[11px] font-semibold text-slate-400">Cart Frequency (f_d)</div>
+            <div class="text-lg font-bold text-purple-300 font-mono">${m.f_d.toFixed(2)} Hz</div>
+            <div class="text-[10px] text-purple-400/80 font-mono">T = ${m.T_d.toFixed(3)}s</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-rose-400">
+            <div class="text-[11px] font-semibold text-slate-400">Peak Velocity (v_max)</div>
+            <div class="text-lg font-bold text-rose-300 font-mono">${m.v_max.toFixed(2)} m/s</div>
+            <div class="text-[10px] text-slate-400 font-mono">At track center</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-amber-400">
+            <div class="text-[11px] font-semibold text-slate-400">Track Damping (c)</div>
+            <div class="text-lg font-bold text-amber-300 font-mono">${m.damping_coeff_c.toFixed(3)} N·s/m</div>
+            <div class="text-[10px] text-slate-400 font-mono">Rolling friction</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-teal-400">
+            <div class="text-[11px] font-semibold text-slate-400">Cart Quality (Q)</div>
+            <div class="text-lg font-bold text-teal-300 font-mono">${m.quality_factor_Q.toFixed(1)}</div>
+            <div class="text-[10px] text-slate-400 font-mono">R² = ${m.r_squared.toFixed(4)}</div>
+          </div>
+        `;
+      } else if (mode === 'torsion') {
+        html = `
+          <div class="glass-card rounded-xl p-3 border-l-4 border-emerald-400">
+            <div class="text-[11px] font-semibold text-slate-400">Torsion Wire Modulus (κ)</div>
+            <div class="text-lg font-bold text-emerald-300 font-mono">${(m.torsion_kappa*1000).toFixed(2)} mN·m/rad</div>
+            <div class="text-[10px] text-emerald-400/80 font-mono">I·ω₀²</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-sky-400">
+            <div class="text-[11px] font-semibold text-slate-400">Moment of Inertia (I)</div>
+            <div class="text-lg font-bold text-white font-mono">${(m.moment_of_inertia_I*1e4).toFixed(2)} ×10⁻⁴</div>
+            <div class="text-[10px] text-slate-400 font-mono">kg·m² (½MR²)</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-purple-400">
+            <div class="text-[11px] font-semibold text-slate-400">Torsional Period (T_d)</div>
+            <div class="text-lg font-bold text-purple-300 font-mono">${m.T_d.toFixed(3)} s</div>
+            <div class="text-[10px] text-purple-400/80 font-mono">f = ${m.f_d.toFixed(2)} Hz</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-amber-400">
+            <div class="text-[11px] font-semibold text-slate-400">Max Twist Angle (θ₀)</div>
+            <div class="text-lg font-bold text-amber-300 font-mono">${m.theta_max_deg.toFixed(1)}°</div>
+            <div class="text-[10px] text-amber-400/80 font-mono">Angular swing</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-rose-400">
+            <div class="text-[11px] font-semibold text-slate-400">Torsional Damping (c_θ)</div>
+            <div class="text-lg font-bold text-rose-300 font-mono">${(m.torsion_damping_c*1e4).toFixed(2)} ×10⁻⁴</div>
+            <div class="text-[10px] text-slate-400 font-mono">N·m·s/rad</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-teal-400">
+            <div class="text-[11px] font-semibold text-slate-400">Torsion Quality (Q)</div>
+            <div class="text-lg font-bold text-teal-300 font-mono">${m.quality_factor_Q.toFixed(1)}</div>
+            <div class="text-[10px] text-slate-400 font-mono">R² = ${m.r_squared.toFixed(4)}</div>
+          </div>
+        `;
+      } else if (mode === 'freefall') {
+        html = `
+          <div class="glass-card rounded-xl p-3 border-l-4 border-emerald-400">
+            <div class="text-[11px] font-semibold text-slate-400">Measured Gravity (g)</div>
+            <div class="text-lg font-bold text-emerald-300 font-mono">${m.g_measured.toFixed(2)} m/s²</div>
+            <div class="text-[10px] text-emerald-400 font-mono">Err: ${m.g_error_pct.toFixed(1)}% vs 9.81</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-sky-400">
+            <div class="text-[11px] font-semibold text-slate-400">Drop Distance (h)</div>
+            <div class="text-lg font-bold text-white font-mono">${m.drop_height_cm.toFixed(1)} cm</div>
+            <div class="text-[10px] text-slate-400 font-mono">Free-fall tube height</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-rose-400">
+            <div class="text-[11px] font-semibold text-slate-400">Impact Velocity (v_imp)</div>
+            <div class="text-lg font-bold text-rose-300 font-mono">${m.v_impact.toFixed(2)} m/s</div>
+            <div class="text-[10px] text-rose-400/80 font-mono">√(2·g·h)</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-purple-400">
+            <div class="text-[11px] font-semibold text-slate-400">Fall Time (t_fall)</div>
+            <div class="text-lg font-bold text-purple-300 font-mono">${m.t_fall.toFixed(3)} s</div>
+            <div class="text-[10px] text-purple-400/80 font-mono">√(2h / g)</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-amber-400">
+            <div class="text-[11px] font-semibold text-slate-400">Impact Kinetic Energy</div>
+            <div class="text-lg font-bold text-amber-300 font-mono">${(m.impact_kinetic_J*1000).toFixed(1)} mJ</div>
+            <div class="text-[10px] text-slate-400 font-mono">½·m·v²</div>
+          </div>
+          <div class="glass-card rounded-xl p-3 border-l-4 border-teal-400">
+            <div class="text-[11px] font-semibold text-slate-400">Kinematic Fit</div>
+            <div class="text-lg font-bold text-teal-300 font-mono">y = ½gt²</div>
+            <div class="text-[10px] text-teal-400 font-mono">2nd Derivative a = g</div>
+          </div>
+        `;
+      }
+
+      container.innerHTML = html;
+    }
+
+    function configureGraphLabels(mode) {
+      if (mode === 'pendulum') {
+        document.getElementById('graphTitle1').innerHTML = `<span>📈</span> 1. Angular Trajectory θ(t) (Degrees)`;
+        document.getElementById('graphEq1').textContent = `θ(t) = θ₀·e^(-γt)·cos(ωt)`;
+        document.getElementById('graphTitle2').innerHTML = `<span>⚡</span> 2. Velocity & Acceleration`;
+        document.getElementById('graphEq2').textContent = `v (m/s) & a (m/s²)`;
+        document.getElementById('graphTitle3').innerHTML = `<span>🌀</span> 3. Angular Phase Space`;
+        document.getElementById('graphEq3').textContent = `Velocity vs Angle θ (deg)`;
+        document.getElementById('graphTitle4').innerHTML = `<span>🔋</span> 4. Pendulum Energy: Kinetic (T) & Gravitational (V)`;
+        document.getElementById('graphEq4').textContent = `V = m·g·L·(1 - cosθ)`;
+      } else if (mode === 'torsion') {
+        document.getElementById('graphTitle1').innerHTML = `<span>📈</span> 1. Angular Rotation θ(t) (Degrees)`;
+        document.getElementById('graphEq1').textContent = `θ(t) = θ₀·e^(-γt)·cos(ωt)`;
+        document.getElementById('graphTitle2').innerHTML = `<span>⚡</span> 2. Angular Velocity ω & Acceleration α`;
+        document.getElementById('graphEq2').textContent = `ω (rad/s) & α (rad/s²)`;
+        document.getElementById('graphTitle3').innerHTML = `<span>🌀</span> 3. Rotational Phase Portrait`;
+        document.getElementById('graphEq3').textContent = `ω vs θ (deg)`;
+        document.getElementById('graphTitle4').innerHTML = `<span>🔋</span> 4. Torsional Energy: Rotational Kinetic & Torsional Potential`;
+        document.getElementById('graphEq4').textContent = `V = ½·κ·θ²`;
+      } else if (mode === 'freefall') {
+        document.getElementById('graphTitle1').innerHTML = `<span>📈</span> 1. Free-Fall Trajectory y(t)`;
+        document.getElementById('graphEq1').textContent = `y(t) = ½·g·t² (Parabola)`;
+        document.getElementById('graphTitle2').innerHTML = `<span>⚡</span> 2. Free-Fall Velocity & Acceleration`;
+        document.getElementById('graphEq2').textContent = `v = g·t | a ≈ 9.81 m/s²`;
+        document.getElementById('graphTitle3').innerHTML = `<span>🌀</span> 3. Torricelli Velocity Phase Relation`;
+        document.getElementById('graphEq3').textContent = `v vs Drop Distance y`;
+        document.getElementById('graphTitle4').innerHTML = `<span>🔋</span> 4. Gravitational Potential to Kinetic Energy`;
+        document.getElementById('graphEq4').textContent = `m·g·h → ½·m·v²`;
+      } else {
+        // Standard Spring & Cart
+        document.getElementById('graphTitle1').innerHTML = `<span>📈</span> 1. Position Trajectory x(t)`;
+        document.getElementById('graphEq1').textContent = `x(t) = A₀·e^(-γt)·cos(ωt)`;
+        document.getElementById('graphTitle2').innerHTML = `<span>⚡</span> 2. Derivatives: Velocity & Acceleration`;
+        document.getElementById('graphEq2').textContent = `v = dx/dt | a = dv/dt`;
+        document.getElementById('graphTitle3').innerHTML = `<span>🌀</span> 3. Phase-Space Portrait`;
+        document.getElementById('graphEq3').textContent = `v vs Δx (Inward Spiral)`;
+        document.getElementById('graphTitle4').innerHTML = `<span>🔋</span> 4. Mechanical Energy Conservation`;
+        document.getElementById('graphEq4').textContent = `T + V = E`;
+      }
+    }
+
+    function downloadActiveCSV() {
+      if (activeCSVFilename) {
+        window.location.href = `/api/download/${activeCSVFilename}`;
+      } else {
+        alert("No CSV file available.");
+      }
+    }
+
+    function downloadProcessedCSV() {
+      if (activeProcessedCSVFilename) {
+        window.location.href = `/api/download_processed/${activeProcessedCSVFilename}`;
+      } else if (activeCSVFilename) {
+        window.location.href = `/api/download_processed/${activeCSVFilename}`;
+      } else {
+        alert("No dataset currently active to export.");
+      }
+    }
+
+    // --- HISTORY TABLE MANAGEMENT ---
+    async function loadHistoryList() {
+      try {
+        const res = await fetch('/api/history');
+        const list = await res.json();
+        document.getElementById('histCount').textContent = list.length;
+        const tbody = document.getElementById('historyTableBody');
+
+        if (!list || list.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="8" class="py-8 text-center text-slate-500 font-sans">No experiments recorded yet. Perform a Live Run, Upload a CSV, or Run a Simulation.</td></tr>`;
+          return;
+        }
+
+        let html = '';
+        list.forEach(item => {
+          let badge = '';
+          const modeTag = item.oscillator_type ? item.oscillator_type.toUpperCase() : 'SPRING';
+          if (item.mode === 'live') {
+            badge = `<span class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">${modeTag} (Live)</span>`;
+          } else if (item.mode === 'webserial') {
+            badge = `<span class="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold">${modeTag} (WebSerial)</span>`;
+          } else if (item.mode === 'csv_upload') {
+            badge = `<span class="px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">${modeTag} (CSV)</span>`;
+          } else {
+            badge = `<span class="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">${modeTag} (Sim)</span>`;
+          }
+
+          const m = item.metrics || {};
+          let keyParam = '';
+          if (item.oscillator_type === 'pendulum') {
+            keyParam = `g = ${(m.g_measured || 9.81).toFixed(2)} m/s²`;
+          } else if (item.oscillator_type === 'torsion') {
+            keyParam = `κ = ${((m.torsion_kappa || 0.05)*1000).toFixed(1)} mN·m`;
+          } else if (item.oscillator_type === 'freefall') {
+            keyParam = `g = ${(m.g_measured || 9.81).toFixed(2)} m/s²`;
+          } else {
+            keyParam = `k = ${(m.k_effective || m.k_total || 15).toFixed(2)} N/m`;
+          }
+
+          let periodText = m.T_d ? `${m.T_d.toFixed(3)}s` : (m.t_fall ? `${m.t_fall.toFixed(3)}s` : '--');
+          let qualityText = m.quality_factor_Q ? `Q = ${m.quality_factor_Q.toFixed(1)}` : (m.g_error_pct ? `Err: ${m.g_error_pct.toFixed(1)}%` : '--');
+
+          html += `
+            <tr class="hover:bg-slate-900/60 transition-colors">
+              <td class="py-3 px-4">${badge}</td>
+              <td class="py-3 px-4 text-slate-400">${item.timestamp}</td>
+              <td class="py-3 px-4 font-bold text-white">${item.name}</td>
+              <td class="py-3 px-4 text-sky-300">${item.mass_g}g</td>
+              <td class="py-3 px-4 text-emerald-300 font-bold">${keyParam}</td>
+              <td class="py-3 px-4">${periodText}</td>
+              <td class="py-3 px-4">${qualityText}</td>
+              <td class="py-3 px-4 text-right space-x-1.5 whitespace-nowrap">
+                <button onclick="loadHistoryDetail('${item.id}')" class="px-2 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white font-sans font-semibold text-xs inline-flex items-center gap-1">
+                  📊 View
+                </button>
+                <a href="/api/download/${item.csv_file}" download class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-sans text-xs inline-flex items-center gap-1" title="Download Raw Sensor Readings">
+                  📥 Raw
+                </a>
+                <a href="/api/download_processed/${item.csv_file}" download class="px-2 py-1 rounded bg-emerald-950/60 hover:bg-emerald-900 text-emerald-300 border border-emerald-800 font-sans text-xs inline-flex items-center gap-1" title="Download Processed Kinematics & Energy Graph Curves">
+                  📈 Graphs
+                </a>
+                <button onclick="deleteHistoryItem('${item.id}')" class="px-2 py-1 rounded bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800 font-sans text-xs">
+                  🗑️
+                </button>
+              </td>
+            </tr>
+          `;
+        });
+        tbody.innerHTML = html;
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function loadHistoryDetail(runId) {
+      try {
+        const res = await fetch(`/api/history/${runId}`);
+        if (!res.ok) throw new Error("Could not load history item.");
+        const payload = await res.json();
+        switchTab('experiment');
+        if (payload.history_entry && payload.history_entry.oscillator_type) {
+          selectOscillatorMode(payload.history_entry.oscillator_type);
+        }
+        applyDataset(payload);
+        showSuccess(`Loaded run: ${payload.history_entry.name}`);
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function deleteHistoryItem(runId) {
+      if (!confirm("Are you sure you want to delete this experiment record from history?")) return;
+      try {
+        await fetch(`/api/history/${runId}`, { method: 'DELETE' });
+        loadHistoryList();
+      } catch (err) {
+        alert("Failed to delete.");
+      }
+    }
+
+    // =========================================================================
+    // CANVAS CHART RENDERING ENGINE
+    // =========================================================================
+    function renderAllCharts() {
+      if (!activeDataset) return;
+      drawChart1();
+      drawChart2();
+      drawChart3();
+      drawChart4();
+    }
+
+    function setupCanvas(id) {
+      const c = document.getElementById(id);
+      const r = c.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      c.width = r.width * dpr;
+      c.height = r.height * dpr;
+      const ctx = c.getContext('2d');
+      ctx.scale(dpr, dpr);
+      return { ctx, width: r.width, height: r.height };
+    }
+
+    // Chart 1: Trajectory
+    function drawChart1() {
+      const { ctx, width, height } = setupCanvas('chart1');
+      if (!ctx || width === 0) return;
+      const pad = { left: 45, right: 15, top: 15, bottom: 25 };
+      const w = width - pad.left - pad.right, h = height - pad.top - pad.bottom;
+      ctx.clearRect(0, 0, width, height);
+
+      const t = activeDataset.time, pos = activeDataset.position;
+      const up = activeDataset.upper_envelope || pos;
+      const low = activeDataset.lower_envelope || pos;
+
+      const minX = t[0], maxX = t[t.length - 1];
+      const minY = Math.min(...low, ...pos) * 1.05;
+      const maxY = Math.max(...up, ...pos) * 1.05;
+
+      const mapX = (val) => pad.left + ((val - minX) / (maxX - minX)) * w;
+      const mapY = (val) => pad.top + h - ((val - minY) / (maxY - minY || 1)) * h;
+
+      const unit = (activeMode === 'pendulum' || activeMode === 'torsion') ? '°' : 'm';
+      drawGrid(ctx, pad, w, h, minX, maxX, minY, maxY, "s", unit);
+
+      // Envelopes
+      if (activeDataset.upper_envelope) {
+        ctx.strokeStyle = 'rgba(52, 211, 153, 0.7)';
+        ctx.setLineDash([3, 3]);
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        t.forEach((time, i) => {
+          const px = mapX(time), py = mapY(up[i]);
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        });
+        ctx.stroke();
+
+        ctx.beginPath();
+        t.forEach((time, i) => {
+          const px = mapX(time), py = mapY(low[i]);
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        });
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Measured Curve
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2.0;
+      ctx.beginPath();
+      t.forEach((time, i) => {
+        const px = mapX(time), py = mapY(pos[i]);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+    }
+
+    // Chart 2: Derivatives
+    function drawChart2() {
+      const { ctx, width, height } = setupCanvas('chart2');
+      if (!ctx || width === 0) return;
+      const pad = { left: 45, right: 45, top: 15, bottom: 25 };
+      const w = width - pad.left - pad.right, h = height - pad.top - pad.bottom;
+      ctx.clearRect(0, 0, width, height);
+
+      const t = activeDataset.time, v = activeDataset.velocity, a = activeDataset.acceleration;
+      const minX = t[0], maxX = t[t.length - 1];
+      const maxV = Math.max(0.1, ...v.map(Math.abs)) * 1.15;
+      const maxA = Math.max(0.5, ...a.map(Math.abs)) * 1.15;
+
+      const mapX = (time) => pad.left + ((time - minX) / (maxX - minX)) * w;
+      const mapY_V = (val) => pad.top + h / 2 - (val / maxV) * (h / 2);
+      const mapY_A = (val) => pad.top + h / 2 - (val / maxA) * (h / 2);
+
+      ctx.strokeStyle = 'rgba(100, 116, 139, 0.4)';
+      ctx.beginPath();
+      ctx.moveTo(pad.left, pad.top + h / 2);
+      ctx.lineTo(pad.left + w, pad.top + h / 2);
+      ctx.stroke();
+
+      // Velocity (Cyan)
+      ctx.strokeStyle = '#22d3ee';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      t.forEach((time, i) => {
+        const px = mapX(time), py = mapY_V(v[i]);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+
+      // Acceleration (Amber Dashed)
+      ctx.strokeStyle = '#fbbf24';
+      ctx.setLineDash([4, 3]);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      t.forEach((time, i) => {
+        const px = mapX(time), py = mapY_A(a[i]);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const vUnit = activeMode === 'torsion' ? 'rad/s' : 'm/s';
+      const aUnit = activeMode === 'torsion' ? 'rad/s²' : 'm/s²';
+
+      ctx.fillStyle = '#22d3ee';
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(`+${maxV.toFixed(2)}`, pad.left - 4, pad.top + 8);
+      ctx.fillText(`-${maxV.toFixed(2)}`, pad.left - 4, pad.top + h);
+      ctx.fillText(vUnit, pad.left - 4, pad.top + h / 2 - 4);
+
+      ctx.fillStyle = '#fbbf24';
+      ctx.textAlign = 'left';
+      ctx.fillText(`+${maxA.toFixed(1)}`, pad.left + w + 4, pad.top + 8);
+      ctx.fillText(`-${maxA.toFixed(1)}`, pad.left + w + 4, pad.top + h);
+      ctx.fillText(aUnit, pad.left + w + 4, pad.top + h / 2 - 4);
+    }
+
+    // Chart 3: Phase Portrait
+    function drawChart3() {
+      const { ctx, width, height } = setupCanvas('chart3');
+      if (!ctx || width === 0) return;
+      const pad = { left: 45, right: 20, top: 15, bottom: 25 };
+      const w = width - pad.left - pad.right, h = height - pad.top - pad.bottom;
+      ctx.clearRect(0, 0, width, height);
+
+      const pos = activeDataset.position, v = activeDataset.velocity;
+      const maxDev = Math.max(0.05, ...pos.map(Math.abs)) * 1.15;
+      const maxV = Math.max(0.1, ...v.map(Math.abs)) * 1.15;
+
+      const mapX = (dx) => pad.left + w / 2 + (dx / maxDev) * (w / 2);
+      const mapY = (val) => pad.top + h / 2 - (val / maxV) * (h / 2);
+
+      ctx.strokeStyle = 'rgba(71, 85, 105, 0.4)';
+      ctx.beginPath();
+      ctx.moveTo(pad.left, pad.top + h / 2);
+      ctx.lineTo(pad.left + w, pad.top + h / 2);
+      ctx.moveTo(pad.left + w / 2, pad.top);
+      ctx.lineTo(pad.left + w / 2, pad.top + h);
+      ctx.stroke();
+
+      ctx.fillStyle = '#f43f5e';
+      ctx.beginPath();
+      ctx.arc(mapX(0), mapY(0), 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.lineWidth = 1.6;
+      for (let i = 0; i < pos.length - 1; i++) {
+        const frac = i / pos.length;
+        ctx.strokeStyle = `rgba(${Math.floor(240 - frac * 100)}, ${Math.floor(80 + frac * 150)}, 250, ${0.9 - frac * 0.4})`;
+        ctx.beginPath();
+        ctx.moveTo(mapX(pos[i]), mapY(v[i]));
+        ctx.lineTo(mapX(pos[i + 1]), mapY(v[i + 1]));
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(`0`, mapX(0), pad.top + h + 16);
+      ctx.fillText(`-${maxDev.toFixed(1)}`, pad.left + 15, pad.top + h + 16);
+      ctx.fillText(`+${maxDev.toFixed(1)}`, pad.left + w - 15, pad.top + h + 16);
+    }
+
+    // Chart 4: Energy
+    function drawChart4() {
+      const { ctx, width, height } = setupCanvas('chart4');
+      if (!ctx || width === 0) return;
+      const pad = { left: 45, right: 15, top: 15, bottom: 25 };
+      const w = width - pad.left - pad.right, h = height - pad.top - pad.bottom;
+      ctx.clearRect(0, 0, width, height);
+
+      const t = activeDataset.time;
+      const K = activeDataset.kinetic_mJ, V = activeDataset.potential_mJ, E = activeDataset.total_mJ;
+      const theory = activeDataset.theory_decay_mJ;
+
+      const minX = t[0], maxX = t[t.length - 1];
+      const maxE = Math.max(1, ...E, ...K, ...V) * 1.15;
+
+      const mapX = (time) => pad.left + ((time - minX) / (maxX - minX)) * w;
+      const mapY = (val) => pad.top + h - (val / maxE) * h;
+
+      drawGrid(ctx, pad, w, h, minX, maxX, 0, maxE, "s", "mJ");
+
+      // Theory envelope
+      if (theory && theory.length > 0) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        t.forEach((time, i) => {
+          const px = mapX(time), py = mapY(theory[i]);
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        });
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Kinetic (Green)
+      ctx.strokeStyle = 'rgba(52, 211, 153, 0.8)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      t.forEach((time, i) => {
+        const px = mapX(time), py = mapY(K[i]);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+
+      // Potential (Blue)
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.8)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      t.forEach((time, i) => {
+        const px = mapX(time), py = mapY(V[i]);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+
+      // Total E (Red)
+      ctx.strokeStyle = '#f43f5e';
+      ctx.lineWidth = 2.0;
+      ctx.beginPath();
+      t.forEach((time, i) => {
+        const px = mapX(time), py = mapY(E[i]);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+    }
+
+    function drawGrid(ctx, pad, w, h, minX, maxX, minY, maxY, xUnit, yUnit) {
+      ctx.strokeStyle = 'rgba(51, 65, 85, 0.3)';
+      ctx.lineWidth = 1;
+      ctx.fillStyle = '#64748b';
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'right';
+
+      for (let i = 0; i <= 4; i++) {
+        const yVal = minY + (i / 4) * (maxY - minY);
+        const py = pad.top + h - (i / 4) * h;
+        ctx.beginPath();
+        ctx.moveTo(pad.left, py);
+        ctx.lineTo(pad.left + w, py);
+        ctx.stroke();
+        ctx.fillText(`${yVal.toFixed(Math.abs(yVal) < 2 ? 2 : 0)}`, pad.left - 4, py + 3);
+      }
+
+      ctx.textAlign = 'center';
+      for (let i = 0; i <= 4; i++) {
+        const xVal = minX + (i / 4) * (maxX - minX);
+        const px = pad.left + (i / 4) * w;
+        ctx.beginPath();
+        ctx.moveTo(px, pad.top);
+        ctx.lineTo(px, pad.top + h);
+        ctx.stroke();
+        ctx.fillText(`${xVal.toFixed(0)}${xUnit}`, px, pad.top + h + 15);
+      }
+    }
+  </script>
+</body>
+</html>
