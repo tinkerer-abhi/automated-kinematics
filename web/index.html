@@ -962,11 +962,28 @@
                 if (!isNaN(rawT) && !isNaN(distM)) {
                   if (initialTimestampUs === null) {
                     initialTimestampUs = rawT;
+                    lastRawT = rawT;
                   }
-                  // Normalize timestamp to relative elapsed seconds
-                  const relTimeSec = (rawT > 100000)
-                    ? (rawT - initialTimestampUs) * 1e-6
-                    : (rawT - initialTimestampUs);
+
+                  // High-precision scale detection
+                  const deltaT = rawT - initialTimestampUs;
+                  let relTimeSec;
+                  if (rawT > 500 || Math.abs(rawT - lastRawT) > 200) {
+                    // Arduino micros()
+                    relTimeSec = deltaT * 1e-6;
+                  } else if (Math.abs(rawT - lastRawT) > 1.0) {
+                    // Arduino millis()
+                    relTimeSec = deltaT * 1e-3;
+                  } else {
+                    relTimeSec = deltaT;
+                  }
+                  lastRawT = rawT;
+
+                  // High-precision browser monotonic timestamp cross-validation
+                  const browserSec = (performance.now() - startTime) / 1000.0;
+                  if (relTimeSec < -0.01 || relTimeSec > durationSec + 5.0 || Math.abs(relTimeSec - browserSec) > 2.0) {
+                    relTimeSec = browserSec;
+                  }
 
                   rawLines.push(`${relTimeSec.toFixed(6)},${sensorId},${distM.toFixed(5)},${pulseUs}`);
                   if (distM >= 0) {
@@ -1130,164 +1147,173 @@
     function renderModeKPICards(mode, m) {
       const container = document.getElementById('kpiContainer');
       let html = '';
+      if (!m) {
+        container.innerHTML = '';
+        return;
+      }
+
+      const isOsc = m.is_oscillating !== false;
+      const oscBadge = isOsc 
+        ? `<div class="text-[10px] text-emerald-400 font-mono font-semibold">Auto-Derived!</div>`
+        : `<div class="text-[10px] text-amber-400 font-mono font-semibold">Static (Δx < 1.5cm)</div>`;
 
       if (mode === 'spring') {
         html = `
           <div class="glass-card rounded-xl p-3 border-l-4 border-emerald-400">
             <div class="text-[11px] font-semibold text-slate-400">Spring Constant (k)</div>
-            <div class="text-lg font-bold text-emerald-300 font-mono">${m.k_effective.toFixed(2)} N/m</div>
-            <div class="text-[10px] text-emerald-400/80 font-mono">Auto-Derived!</div>
+            <div class="text-lg font-bold text-emerald-300 font-mono">${(m.k_effective != null ? m.k_effective : 0).toFixed(2)} N/m</div>
+            ${oscBadge}
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-sky-400">
             <div class="text-[11px] font-semibold text-slate-400">Frequency (f_d)</div>
-            <div class="text-lg font-bold text-white font-mono">${m.f_d.toFixed(2)} Hz</div>
-            <div class="text-[10px] text-slate-400 font-mono">T = ${m.T_d.toFixed(3)} s</div>
+            <div class="text-lg font-bold text-white font-mono">${(m.f_d != null ? m.f_d : 0).toFixed(2)} Hz</div>
+            <div class="text-[10px] text-slate-400 font-mono">T = ${(m.T_d != null ? m.T_d : 0).toFixed(3)} s</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-amber-400">
             <div class="text-[11px] font-semibold text-slate-400">Damping Ratio (ζ)</div>
-            <div class="text-lg font-bold text-amber-300 font-mono">${m.damping_ratio_zeta.toFixed(4)}</div>
-            <div class="text-[10px] text-amber-400/80 font-mono">Underdamped</div>
+            <div class="text-lg font-bold text-amber-300 font-mono">${(m.damping_ratio_zeta != null ? m.damping_ratio_zeta : 0).toFixed(4)}</div>
+            <div class="text-[10px] text-amber-400/80 font-mono">${(m.damping_ratio_zeta || 0) < 1.0 ? 'Underdamped' : 'Overdamped'}</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-indigo-400">
             <div class="text-[11px] font-semibold text-slate-400">Quality Factor (Q)</div>
-            <div class="text-lg font-bold text-indigo-300 font-mono">${m.quality_factor_Q.toFixed(1)}</div>
-            <div class="text-[10px] text-slate-400 font-mono">R² = ${m.r_squared.toFixed(4)}</div>
+            <div class="text-lg font-bold text-indigo-300 font-mono">${(m.quality_factor_Q != null ? m.quality_factor_Q : 0).toFixed(1)}</div>
+            <div class="text-[10px] text-slate-400 font-mono">R² = ${(m.r_squared != null ? m.r_squared : 0).toFixed(4)}</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-rose-400">
             <div class="text-[11px] font-semibold text-slate-400">Damping Coeff (c)</div>
-            <div class="text-lg font-bold text-rose-300 font-mono">${m.damping_coeff_c.toFixed(3)} N·s/m</div>
+            <div class="text-lg font-bold text-rose-300 font-mono">${(m.damping_coeff_c != null ? m.damping_coeff_c : 0).toFixed(3)} N·s/m</div>
             <div class="text-[10px] text-slate-400 font-mono">2·m·γ</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-teal-400">
             <div class="text-[11px] font-semibold text-slate-400">Energy Loss (%)</div>
-            <div class="text-lg font-bold text-teal-300 font-mono">${m.energy_lost_pct.toFixed(1)}%</div>
-            <div class="text-[10px] text-slate-400 font-mono">E₀ = ${m.e0_mJ.toFixed(1)} mJ</div>
+            <div class="text-lg font-bold text-teal-300 font-mono">${(m.energy_lost_pct != null ? m.energy_lost_pct : 0).toFixed(1)}%</div>
+            <div class="text-[10px] text-slate-400 font-mono">E₀ = ${(m.e0_mJ != null ? m.e0_mJ : 0).toFixed(1)} mJ</div>
           </div>
         `;
       } else if (mode === 'pendulum') {
         html = `
           <div class="glass-card rounded-xl p-3 border-l-4 border-emerald-400">
             <div class="text-[11px] font-semibold text-slate-400">Derived Gravity (g)</div>
-            <div class="text-lg font-bold text-emerald-300 font-mono">${m.g_measured.toFixed(2)} m/s²</div>
-            <div class="text-[10px] text-emerald-400 font-mono">Err: ${m.g_error_pct.toFixed(1)}% vs 9.81</div>
+            <div class="text-lg font-bold text-emerald-300 font-mono">${(m.g_measured != null ? m.g_measured : 9.81).toFixed(2)} m/s²</div>
+            <div class="text-[10px] text-emerald-400 font-mono">Err: ${(m.g_error_pct != null ? m.g_error_pct : 0).toFixed(1)}% vs 9.81</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-sky-400">
             <div class="text-[11px] font-semibold text-slate-400">Cord Length (L)</div>
-            <div class="text-lg font-bold text-white font-mono">${m.cord_length_cm.toFixed(1)} cm</div>
-            <div class="text-[10px] text-slate-400 font-mono">T_theory = ${m.T_theory.toFixed(3)}s</div>
+            <div class="text-lg font-bold text-white font-mono">${(m.cord_length_cm != null ? m.cord_length_cm : 60).toFixed(1)} cm</div>
+            <div class="text-[10px] text-slate-400 font-mono">T_theory = ${(m.T_theory != null ? m.T_theory : 0).toFixed(3)}s</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-purple-400">
             <div class="text-[11px] font-semibold text-slate-400">Measured Period (T_d)</div>
-            <div class="text-lg font-bold text-purple-300 font-mono">${m.T_d.toFixed(3)} s</div>
-            <div class="text-[10px] text-purple-400/80 font-mono">f = ${m.f_d.toFixed(2)} Hz</div>
+            <div class="text-lg font-bold text-purple-300 font-mono">${(m.T_d != null ? m.T_d : 0).toFixed(3)} s</div>
+            <div class="text-[10px] text-purple-400/80 font-mono">f = ${(m.f_d != null ? m.f_d : 0).toFixed(2)} Hz</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-amber-400">
             <div class="text-[11px] font-semibold text-slate-400">Restoring Factor (k_eff)</div>
-            <div class="text-lg font-bold text-amber-300 font-mono">${m.k_effective.toFixed(2)} N/m</div>
+            <div class="text-lg font-bold text-amber-300 font-mono">${(m.k_effective != null ? m.k_effective : 0).toFixed(2)} N/m</div>
             <div class="text-[10px] text-amber-400/80 font-mono">mg / L</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-rose-400">
             <div class="text-[11px] font-semibold text-slate-400">Max Deflection (θ₀)</div>
-            <div class="text-lg font-bold text-rose-300 font-mono">${m.theta_max_deg.toFixed(1)}°</div>
+            <div class="text-lg font-bold text-rose-300 font-mono">${(m.theta_max_deg != null ? m.theta_max_deg : 0).toFixed(1)}°</div>
             <div class="text-[10px] text-slate-400 font-mono">Small angle regime</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-teal-400">
             <div class="text-[11px] font-semibold text-slate-400">Pendulum Quality (Q)</div>
-            <div class="text-lg font-bold text-teal-300 font-mono">${m.quality_factor_Q.toFixed(1)}</div>
-            <div class="text-[10px] text-slate-400 font-mono">ζ = ${m.damping_ratio_zeta.toFixed(4)}</div>
+            <div class="text-lg font-bold text-teal-300 font-mono">${(m.quality_factor_Q != null ? m.quality_factor_Q : 0).toFixed(1)}</div>
+            <div class="text-[10px] text-slate-400 font-mono">ζ = ${(m.damping_ratio_zeta != null ? m.damping_ratio_zeta : 0).toFixed(4)}</div>
           </div>
         `;
       } else if (mode === 'cart') {
         html = `
           <div class="glass-card rounded-xl p-3 border-l-4 border-emerald-400">
             <div class="text-[11px] font-semibold text-slate-400">Combined Springs (k_total)</div>
-            <div class="text-lg font-bold text-emerald-300 font-mono">${m.k_total.toFixed(2)} N/m</div>
-            <div class="text-[10px] text-emerald-400/80 font-mono">k₁ + k₂</div>
+            <div class="text-lg font-bold text-emerald-300 font-mono">${(m.k_total != null ? m.k_total : 0).toFixed(2)} N/m</div>
+            ${oscBadge}
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-sky-400">
             <div class="text-[11px] font-semibold text-slate-400">Single Spring Est.</div>
-            <div class="text-lg font-bold text-white font-mono">${m.k_single_est.toFixed(2)} N/m</div>
+            <div class="text-lg font-bold text-white font-mono">${(m.k_single_est != null ? m.k_single_est : 0).toFixed(2)} N/m</div>
             <div class="text-[10px] text-slate-400 font-mono">k_total / 2</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-purple-400">
             <div class="text-[11px] font-semibold text-slate-400">Cart Frequency (f_d)</div>
-            <div class="text-lg font-bold text-purple-300 font-mono">${m.f_d.toFixed(2)} Hz</div>
-            <div class="text-[10px] text-purple-400/80 font-mono">T = ${m.T_d.toFixed(3)}s</div>
+            <div class="text-lg font-bold text-purple-300 font-mono">${(m.f_d != null ? m.f_d : 0).toFixed(2)} Hz</div>
+            <div class="text-[10px] text-purple-400/80 font-mono">T = ${(m.T_d != null ? m.T_d : 0).toFixed(3)}s</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-rose-400">
             <div class="text-[11px] font-semibold text-slate-400">Peak Velocity (v_max)</div>
-            <div class="text-lg font-bold text-rose-300 font-mono">${m.v_max.toFixed(2)} m/s</div>
+            <div class="text-lg font-bold text-rose-300 font-mono">${(m.v_max != null ? m.v_max : 0).toFixed(2)} m/s</div>
             <div class="text-[10px] text-slate-400 font-mono">At track center</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-amber-400">
             <div class="text-[11px] font-semibold text-slate-400">Track Damping (c)</div>
-            <div class="text-lg font-bold text-amber-300 font-mono">${m.damping_coeff_c.toFixed(3)} N·s/m</div>
+            <div class="text-lg font-bold text-amber-300 font-mono">${(m.damping_coeff_c != null ? m.damping_coeff_c : 0).toFixed(3)} N·s/m</div>
             <div class="text-[10px] text-slate-400 font-mono">Rolling friction</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-teal-400">
             <div class="text-[11px] font-semibold text-slate-400">Cart Quality (Q)</div>
-            <div class="text-lg font-bold text-teal-300 font-mono">${m.quality_factor_Q.toFixed(1)}</div>
-            <div class="text-[10px] text-slate-400 font-mono">R² = ${m.r_squared.toFixed(4)}</div>
+            <div class="text-lg font-bold text-teal-300 font-mono">${(m.quality_factor_Q != null ? m.quality_factor_Q : 0).toFixed(1)}</div>
+            <div class="text-[10px] text-slate-400 font-mono">R² = ${(m.r_squared != null ? m.r_squared : 0).toFixed(4)}</div>
           </div>
         `;
       } else if (mode === 'torsion') {
         html = `
           <div class="glass-card rounded-xl p-3 border-l-4 border-emerald-400">
             <div class="text-[11px] font-semibold text-slate-400">Torsion Wire Modulus (κ)</div>
-            <div class="text-lg font-bold text-emerald-300 font-mono">${(m.torsion_kappa*1000).toFixed(2)} mN·m/rad</div>
-            <div class="text-[10px] text-emerald-400/80 font-mono">I·ω₀²</div>
+            <div class="text-lg font-bold text-emerald-300 font-mono">${((m.torsion_kappa != null ? m.torsion_kappa : 0)*1000).toFixed(2)} mN·m/rad</div>
+            ${oscBadge}
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-sky-400">
             <div class="text-[11px] font-semibold text-slate-400">Moment of Inertia (I)</div>
-            <div class="text-lg font-bold text-white font-mono">${(m.moment_of_inertia_I*1e4).toFixed(2)} ×10⁻⁴</div>
+            <div class="text-lg font-bold text-white font-mono">${((m.moment_of_inertia_I != null ? m.moment_of_inertia_I : 0)*1e4).toFixed(2)} ×10⁻⁴</div>
             <div class="text-[10px] text-slate-400 font-mono">kg·m² (½MR²)</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-purple-400">
             <div class="text-[11px] font-semibold text-slate-400">Torsional Period (T_d)</div>
-            <div class="text-lg font-bold text-purple-300 font-mono">${m.T_d.toFixed(3)} s</div>
-            <div class="text-[10px] text-purple-400/80 font-mono">f = ${m.f_d.toFixed(2)} Hz</div>
+            <div class="text-lg font-bold text-purple-300 font-mono">${(m.T_d != null ? m.T_d : 0).toFixed(3)} s</div>
+            <div class="text-[10px] text-purple-400/80 font-mono">f = ${(m.f_d != null ? m.f_d : 0).toFixed(2)} Hz</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-amber-400">
             <div class="text-[11px] font-semibold text-slate-400">Max Twist Angle (θ₀)</div>
-            <div class="text-lg font-bold text-amber-300 font-mono">${m.theta_max_deg.toFixed(1)}°</div>
+            <div class="text-lg font-bold text-amber-300 font-mono">${(m.theta_max_deg != null ? m.theta_max_deg : 0).toFixed(1)}°</div>
             <div class="text-[10px] text-amber-400/80 font-mono">Angular swing</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-rose-400">
             <div class="text-[11px] font-semibold text-slate-400">Torsional Damping (c_θ)</div>
-            <div class="text-lg font-bold text-rose-300 font-mono">${(m.torsion_damping_c*1e4).toFixed(2)} ×10⁻⁴</div>
+            <div class="text-lg font-bold text-rose-300 font-mono">${((m.torsion_damping_c != null ? m.torsion_damping_c : 0)*1e4).toFixed(2)} ×10⁻⁴</div>
             <div class="text-[10px] text-slate-400 font-mono">N·m·s/rad</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-teal-400">
             <div class="text-[11px] font-semibold text-slate-400">Torsion Quality (Q)</div>
-            <div class="text-lg font-bold text-teal-300 font-mono">${m.quality_factor_Q.toFixed(1)}</div>
-            <div class="text-[10px] text-slate-400 font-mono">R² = ${m.r_squared.toFixed(4)}</div>
+            <div class="text-lg font-bold text-teal-300 font-mono">${(m.quality_factor_Q != null ? m.quality_factor_Q : 0).toFixed(1)}</div>
+            <div class="text-[10px] text-slate-400 font-mono">R² = ${(m.r_squared != null ? m.r_squared : 0).toFixed(4)}</div>
           </div>
         `;
       } else if (mode === 'freefall') {
         html = `
           <div class="glass-card rounded-xl p-3 border-l-4 border-emerald-400">
             <div class="text-[11px] font-semibold text-slate-400">Measured Gravity (g)</div>
-            <div class="text-lg font-bold text-emerald-300 font-mono">${m.g_measured.toFixed(2)} m/s²</div>
-            <div class="text-[10px] text-emerald-400 font-mono">Err: ${m.g_error_pct.toFixed(1)}% vs 9.81</div>
+            <div class="text-lg font-bold text-emerald-300 font-mono">${(m.g_measured != null ? m.g_measured : 9.81).toFixed(2)} m/s²</div>
+            <div class="text-[10px] text-emerald-400 font-mono">Err: ${(m.g_error_pct != null ? m.g_error_pct : 0).toFixed(1)}% vs 9.81</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-sky-400">
             <div class="text-[11px] font-semibold text-slate-400">Drop Distance (h)</div>
-            <div class="text-lg font-bold text-white font-mono">${m.drop_height_cm.toFixed(1)} cm</div>
+            <div class="text-lg font-bold text-white font-mono">${(m.drop_height_cm != null ? m.drop_height_cm : 60).toFixed(1)} cm</div>
             <div class="text-[10px] text-slate-400 font-mono">Free-fall tube height</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-rose-400">
             <div class="text-[11px] font-semibold text-slate-400">Impact Velocity (v_imp)</div>
-            <div class="text-lg font-bold text-rose-300 font-mono">${m.v_impact.toFixed(2)} m/s</div>
+            <div class="text-lg font-bold text-rose-300 font-mono">${(m.v_impact != null ? m.v_impact : 0).toFixed(2)} m/s</div>
             <div class="text-[10px] text-rose-400/80 font-mono">√(2·g·h)</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-purple-400">
             <div class="text-[11px] font-semibold text-slate-400">Fall Time (t_fall)</div>
-            <div class="text-lg font-bold text-purple-300 font-mono">${m.t_fall.toFixed(3)} s</div>
+            <div class="text-lg font-bold text-purple-300 font-mono">${(m.t_fall != null ? m.t_fall : 0).toFixed(3)} s</div>
             <div class="text-[10px] text-purple-400/80 font-mono">√(2h / g)</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-amber-400">
             <div class="text-[11px] font-semibold text-slate-400">Impact Kinetic Energy</div>
-            <div class="text-lg font-bold text-amber-300 font-mono">${(m.impact_kinetic_J*1000).toFixed(1)} mJ</div>
+            <div class="text-lg font-bold text-amber-300 font-mono">${((m.impact_kinetic_J != null ? m.impact_kinetic_J : 0)*1000).toFixed(1)} mJ</div>
             <div class="text-[10px] text-slate-400 font-mono">½·m·v²</div>
           </div>
           <div class="glass-card rounded-xl p-3 border-l-4 border-teal-400">

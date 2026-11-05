@@ -30,100 +30,194 @@ class HarmonicFitEngine:
     def __init__(self, physics_params: PhysicsParams = DEFAULT_PHYSICS):
         self.physics = physics_params
 
-    def estimate_initial_priors(self, t: np.ndarray, x: np.ndarray) -> Tuple[float, float, float, float, float]:
-        """Derives robust initial guesses for the non-linear curve fitting."""
+    def estimate_initial_priors(self, t: np.ndarray, x: np.ndarray) -> Tuple[float, float, list, float, float]:
+        """
+        Derives robust, physically-bounded candidate priors for non-linear curve fitting.
+        Combines:
+        1. Detrended + Hann-windowed FFT (rejects low-frequency DC spectral leakage).
+        2. Time-domain peak extrema detection (find_peaks on smoothed trajectory).
+        3. Theoretical nominal frequency prior based on rig configuration.
+        """
         x_eq_guess = float(np.median(x))
         x_centered = x - x_eq_guess
+        ptp = float(np.max(x) - np.min(x))
 
-        # Amplitude guess
-        A0_guess = float((np.max(x) - np.min(x)) / 2.0)
+        # Amplitude guess from 95th percentile to reject spurious ultrasonic spikes
+        A0_guess = float(np.percentile(np.abs(x_centered), 95) * 1.15)
+        A0_guess = max(0.005, min(A0_guess, max(0.01, ptp / 2.0)))
 
-        # Estimate frequency using FFT
-        dt = float(t[1] - t[0])
+        dt = float(np.median(np.diff(t))) if len(t) > 1 else 0.025
         n = len(t)
-        fft_vals = np.abs(np.fft.rfft(x_centered))
-        fft_freqs = np.fft.rfftfreq(n, d=dt)
+        candidate_omegas = []
 
-        # Ignore DC component
-        if len(fft_vals) > 2:
-            peak_idx = np.argmax(fft_vals[1:]) + 1
-            freq_hz = float(fft_freqs[peak_idx])
-            omega_d_guess = float(2.0 * np.pi * freq_hz)
-        else:
-            omega_d_guess = 6.28  # ~1 Hz fallback
+        # --- Method 1: Detrended Hann-Windowed FFT ---
+        if n >= 16:
+            try:
+                x_detrend = signal.detrend(x_centered)
+                window = signal.windows.hann(n)
+                fft_vals = np.abs(np.fft.rfft(x_detrend * window))
+                fft_freqs = np.fft.rfftfreq(n, d=dt)
 
-        # Estimate gamma from initial vs ending envelope
-        # A_end ~ A0 * exp(-gamma * T)
-        t_span = float(t[-1] - t[0])
-        gamma_guess = 0.1
+                # Restrict to realistic physical oscillator frequencies (0.25 Hz to 7.5 Hz)
+                phys_mask = (fft_freqs >= 0.25) & (fft_freqs <= 7.5)
+                if np.any(phys_mask):
+                    peak_phys_idx = np.where(phys_mask)[0][np.argmax(fft_vals[phys_mask])]
+                    f_fft = float(fft_freqs[peak_phys_idx])
+                    if f_fft > 0:
+                        candidate_omegas.append(float(2.0 * np.pi * f_fft))
+            except Exception:
+                pass
+
+        # --- Method 2: Time-Domain Peak Extrema Detection ---
+        if n >= 20 and dt > 0:
+            try:
+                # Smooth slightly with Savitzky-Golay to avoid ultrasonic jitter
+                w_len = max(5, int(0.08 / dt))
+                if w_len % 2 == 0:
+                    w_len += 1
+                if w_len <= n:
+                    x_smooth = signal.savgol_filter(x_centered, w_len, min(2, w_len - 1))
+                else:
+                    x_smooth = x_centered
+
+                min_dist = max(2, int(0.18 / dt))  # At least 0.18s between peaks (~5.5 Hz max)
+                prom = max(0.003, ptp * 0.10)
+                peaks_pos, _ = signal.find_peaks(x_smooth, distance=min_dist, prominence=prom)
+                peaks_neg, _ = signal.find_peaks(-x_smooth, distance=min_dist, prominence=prom)
+
+                if len(peaks_pos) >= 2:
+                    p_pos = float(np.median(np.diff(t[peaks_pos])))
+                    if 0.12 <= p_pos <= 4.0:
+                        candidate_omegas.append(float(2.0 * np.pi / p_pos))
+
+                if len(peaks_neg) >= 2:
+                    p_neg = float(np.median(np.diff(t[peaks_neg])))
+                    if 0.12 <= p_neg <= 4.0:
+                        candidate_omegas.append(float(2.0 * np.pi / p_neg))
+            except Exception:
+                pass
+
+        # --- Method 3: Theoretical Prior based on Rig Mode ---
+        m = max(0.01, self.physics.mass)
+        if self.physics.oscillator_type == 'spring' and self.physics.nominal_spring_k > 0:
+            candidate_omegas.append(float(np.sqrt(self.physics.nominal_spring_k / m)))
+        elif self.physics.oscillator_type == 'cart' and self.physics.nominal_spring_k > 0:
+            candidate_omegas.append(float(np.sqrt(2.0 * self.physics.nominal_spring_k / m)))
+        elif self.physics.oscillator_type == 'pendulum' and self.physics.pendulum_length > 0:
+            candidate_omegas.append(float(np.sqrt(self.physics.gravity / max(0.1, self.physics.pendulum_length))))
+        elif self.physics.oscillator_type == 'torsion':
+            R = max(0.02, self.physics.disc_radius)
+            I = 0.5 * m * (R ** 2)
+            # Typical wire kappa ~0.05 - 0.25 N*m/rad
+            candidate_omegas.append(float(np.sqrt(0.12 / I)))
+
+        # Fallback if no valid candidates found
+        if not candidate_omegas:
+            candidate_omegas = [float(2.0 * np.pi * 1.35)]
+
+        # Estimate gamma from decay envelope
+        t_span = float(t[-1] - t[0]) if len(t) > 1 else 1.0
+        gamma_guess = 0.05
         if t_span > 2.0:
-            window_size = max(5, int(len(x) * 0.15))
-            head_amp = np.std(x_centered[:window_size]) * np.sqrt(2)
-            tail_amp = np.std(x_centered[-window_size:]) * np.sqrt(2)
+            w_size = max(5, int(n * 0.18))
+            head_amp = float(np.std(x_centered[:w_size]) * np.sqrt(2))
+            tail_amp = float(np.std(x_centered[-w_size:]) * np.sqrt(2))
             if head_amp > tail_amp > 1e-4:
-                gamma_guess = float(-np.log(tail_amp / head_amp) / t_span)
-                gamma_guess = max(0.001, min(gamma_guess, 5.0))
+                gamma_guess = float(-np.log(max(1e-4, tail_amp) / head_amp) / (t_span * 0.8))
+                gamma_guess = max(0.001, min(gamma_guess, 4.0))
 
         phi_guess = 0.0
 
-        return A0_guess, gamma_guess, omega_d_guess, phi_guess, x_eq_guess
+        return A0_guess, gamma_guess, candidate_omegas, phi_guess, x_eq_guess
 
     def fit_damped_motion(self, t: np.ndarray, x: np.ndarray) -> Dict[str, Any]:
         """
-        Fits the underdamped motion model to position data using Non-Linear Least Squares.
-        Extracts key physical damping properties and uncertainties.
+        Fits the underdamped motion model to position data using Multi-Start Non-Linear Least Squares.
+        Tests all physical frequency candidates to avoid local minima or boundary traps.
         """
-        # Zero-center time for numerical stability during fitting
         t0 = t[0]
         t_rel = t - t0
+        ptp = float(np.max(x) - np.min(x))
 
-        p0 = self.estimate_initial_priors(t_rel, x)
+        A0_g, gamma_g, omegas, phi_g, x_eq_g = self.estimate_initial_priors(t_rel, x)
 
+        # Realistic physical parameter bounds:
+        # omega_d between 0.3 rad/s (T = 20.9 s) and 50 rad/s (~8 Hz)
         bounds = (
-            [-np.inf, 0.0, 0.05, -2.0 * np.pi, -np.inf],   # Lower bounds (gamma >= 0, omega_d > 0)
-            [np.inf, 50.0, 100.0, 2.0 * np.pi, np.inf]     # Upper bounds
+            [-np.inf, 0.0, 0.30, -2.0 * np.pi, -np.inf],
+            [np.inf, 25.0, 50.0, 2.0 * np.pi, np.inf]
         )
 
-        try:
-            popt, pcov = optimize.curve_fit(
-                damped_oscillator_model,
-                t_rel,
-                x,
-                p0=p0,
-                bounds=bounds,
-                maxfev=10000
-            )
-            perr = np.sqrt(np.diag(pcov))
-        except Exception as e:
-            print(f"[WARNING] Non-linear fit failed: {e}. Falling back to initial estimates.")
-            popt = p0
+        best_popt = None
+        best_pcov = None
+        best_ss_res = np.inf
+        ss_tot = float(np.sum((x - np.mean(x)) ** 2))
+
+        # Evaluate unique candidate frequencies to find global minimum
+        unique_omegas = sorted(list({round(w, 3): w for w in omegas}.values()))
+        for omega_cand in unique_omegas:
+            p0 = [A0_g, gamma_g, omega_cand, phi_g, x_eq_g]
+            try:
+                popt, pcov = optimize.curve_fit(
+                    damped_oscillator_model,
+                    t_rel,
+                    x,
+                    p0=p0,
+                    bounds=bounds,
+                    maxfev=6000
+                )
+                fit_eval = damped_oscillator_model(t_rel, *popt)
+                ss_res = float(np.sum((x - fit_eval) ** 2))
+                if ss_res < best_ss_res:
+                    best_ss_res = ss_res
+                    best_popt = popt
+                    best_pcov = pcov
+            except Exception:
+                continue
+
+        if best_popt is not None:
+            popt = best_popt
+            try:
+                perr = np.sqrt(np.diag(best_pcov)) if best_pcov is not None else np.zeros(5)
+            except Exception:
+                perr = np.zeros(5)
+        else:
+            popt = [A0_g, gamma_g, unique_omegas[0], phi_g, x_eq_g]
             perr = np.zeros(5)
 
         A0, gamma, omega_d, phi, x_eq = popt
         A0_err, gamma_err, omega_d_err, phi_err, x_eq_err = perr
 
         # Calculate physical oscillator parameters
-        # Undamped natural angular frequency: omega_0 = sqrt(omega_d^2 + gamma^2)
         omega_0 = float(np.sqrt(omega_d**2 + gamma**2))
-        natural_freq_hz = omega_0 / (2.0 * np.pi)
-        damped_freq_hz = omega_d / (2.0 * np.pi)
-        damped_period_sec = (2.0 * np.pi) / omega_d if omega_d > 0 else np.nan
+        natural_freq_hz = float(omega_0 / (2.0 * np.pi))
+        damped_freq_hz = float(omega_d / (2.0 * np.pi))
+        damped_period_sec = float((2.0 * np.pi) / omega_d) if omega_d > 0 else np.nan
 
         # Damping ratio: zeta = gamma / omega_0
-        damping_ratio_zeta = float(gamma / omega_0) if omega_0 > 0 else np.nan
+        damping_ratio_zeta = float(gamma / omega_0) if omega_0 > 0 else 0.0
 
         # Quality factor: Q = 1 / (2 * zeta) = omega_0 / (2 * gamma)
-        quality_factor_Q = float(omega_0 / (2.0 * gamma)) if gamma > 0 else np.inf
+        quality_factor_Q = float(omega_0 / (2.0 * gamma)) if gamma > 1e-6 else 999.0
 
         # Viscous damping coefficient c (N*s/m): c = 2 * m * gamma
         damping_coeff_c = float(2.0 * self.physics.mass * gamma)
 
-        # Dynamic Spring Constant: k = m * omega_0^2
+        # Mode-tailored dynamic stiffness:
+        m = self.physics.mass
         if self.physics.oscillator_type == 'spring':
-            k_effective = float(self.physics.mass * (omega_0**2))
+            k_effective = float(m * (omega_0 ** 2))
+        elif self.physics.oscillator_type == 'cart':
+            k_effective = float(m * (omega_0 ** 2))
+        elif self.physics.oscillator_type == 'pendulum':
+            L = max(0.05, self.physics.pendulum_length)
+            k_effective = float(m * self.physics.gravity / L)
+        elif self.physics.oscillator_type == 'torsion':
+            R = max(0.02, self.physics.disc_radius)
+            I = 0.5 * m * (R ** 2)
+            k_effective = float(I * (omega_0 ** 2))
         else:
-            # For a pendulum: omega_0^2 = g / L -> effective restoring factor k_eff = m * g / L
-            k_effective = float(self.physics.mass * self.physics.gravity / self.physics.pendulum_length)
+            k_effective = float(m * (omega_0 ** 2))
 
         # Fitted curve & envelope
         fitted_curve = damped_oscillator_model(t_rel, *popt)
@@ -131,9 +225,12 @@ class HarmonicFitEngine:
         lower_envelope = x_eq - np.abs(A0) * np.exp(-gamma * t_rel)
 
         # Goodness of fit (R^2)
-        ss_res = np.sum((x - fitted_curve)**2)
-        ss_tot = np.sum((x - np.mean(x))**2)
-        r_squared = float(1.0 - (ss_res / ss_tot)) if ss_tot > 0 else 0.0
+        ss_res = float(np.sum((x - fitted_curve) ** 2))
+        r_squared = float(1.0 - (ss_res / ss_tot)) if ss_tot > 1e-9 else 0.0
+        r_squared = max(0.0, min(1.0, r_squared))
+
+        # Amplitude check flag
+        is_oscillating = ptp >= 0.015 and r_squared >= 0.15
 
         return {
             "popt": popt,
@@ -156,6 +253,8 @@ class HarmonicFitEngine:
             "damping_coeff_c": damping_coeff_c,
             "k_effective": k_effective,
             "r_squared": r_squared,
+            "is_oscillating": is_oscillating,
+            "ptp_amplitude_m": ptp,
             "fitted_curve": fitted_curve,
             "upper_envelope": upper_envelope,
             "lower_envelope": lower_envelope,

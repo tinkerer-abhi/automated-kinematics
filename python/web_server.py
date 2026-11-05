@@ -153,6 +153,9 @@ def process_kinematics_payload(raw_time: np.ndarray, raw_dist: np.ndarray, physi
         fit = fe.fit_damped_motion(t, x)
         energy = fe.calculate_energy(t, x, v, k=fit["k_effective"], x_eq=fit["x_eq"], gamma=fit["gamma"])
 
+        is_osc = bool(fit.get("is_oscillating", True))
+        ptp_cm = float(fit.get("ptp_amplitude_m", 0.0) * 100.0)
+        status_note = "Valid Harmonic Oscillation" if is_osc else "Low Amplitude / Static motion (< 1.5 cm). Displace mass and release to oscillate."
         step = max(1, len(t) // 600)
         metrics = {
             "mode": "spring",
@@ -168,6 +171,9 @@ def process_kinematics_payload(raw_time: np.ndarray, raw_dist: np.ndarray, physi
             "e0_mJ": float(energy["E0"] * 1000.0),
             "energy_lost_pct": float(((energy["E0"] - energy["total"][-1]) / energy["E0"]) * 100.0) if energy["E0"] > 0 else 0.0,
             "x_eq": float(fit["x_eq"]),
+            "is_oscillating": is_osc,
+            "ptp_amplitude_cm": ptp_cm,
+            "status_note": status_note,
             "valid_samples": int(kinematics["stats"]["valid_samples"])
         }
         return {
@@ -220,6 +226,9 @@ def process_kinematics_payload(raw_time: np.ndarray, raw_dist: np.ndarray, physi
         E_pend = K_pend + V_pend
         e0 = float(np.percentile(E_pend[:max(5, len(E_pend)//10)], 90))
 
+        is_osc = bool(fit.get("is_oscillating", True))
+        ptp_cm = float(fit.get("ptp_amplitude_m", 0.0) * 100.0)
+        status_note = "Valid Pendulum Oscillation" if is_osc else "Low Amplitude / Static motion (< 1.5 cm)."
         step = max(1, len(t) // 600)
         metrics = {
             "mode": "pendulum",
@@ -238,6 +247,9 @@ def process_kinematics_payload(raw_time: np.ndarray, raw_dist: np.ndarray, physi
             "e0_mJ": float(e0 * 1000.0),
             "energy_lost_pct": float(((e0 - E_pend[-1]) / e0) * 100.0) if e0 > 0 else 0.0,
             "x_eq": float(x_eq),
+            "is_oscillating": is_osc,
+            "ptp_amplitude_cm": ptp_cm,
+            "status_note": status_note,
             "valid_samples": int(kinematics["stats"]["valid_samples"])
         }
         return {
@@ -271,6 +283,9 @@ def process_kinematics_payload(raw_time: np.ndarray, raw_dist: np.ndarray, physi
         energy = fe.calculate_energy(t, x, v, k=k_total, x_eq=fit["x_eq"], gamma=fit["gamma"])
         v_max = float(np.max(np.abs(v)))
 
+        is_osc = bool(fit.get("is_oscillating", True))
+        ptp_cm = float(fit.get("ptp_amplitude_m", 0.0) * 100.0)
+        status_note = "Valid Cart Oscillation" if is_osc else "Low Amplitude / Static motion (< 1.5 cm)."
         step = max(1, len(t) // 600)
         metrics = {
             "mode": "cart",
@@ -287,6 +302,9 @@ def process_kinematics_payload(raw_time: np.ndarray, raw_dist: np.ndarray, physi
             "energy_lost_pct": float(((energy["E0"] - energy["total"][-1]) / energy["E0"]) * 100.0) if energy["E0"] > 0 else 0.0,
             "r_squared": float(fit["r_squared"]),
             "x_eq": float(fit["x_eq"]),
+            "is_oscillating": is_osc,
+            "ptp_amplitude_cm": ptp_cm,
+            "status_note": status_note,
             "valid_samples": int(kinematics["stats"]["valid_samples"])
         }
         return {
@@ -338,6 +356,9 @@ def process_kinematics_payload(raw_time: np.ndarray, raw_dist: np.ndarray, physi
         E_torsion = K_torsion + V_torsion
         e0 = float(np.percentile(E_torsion[:max(5, len(E_torsion)//10)], 90))
 
+        is_osc = bool(fit.get("is_oscillating", True))
+        ptp_cm = float(fit.get("ptp_amplitude_m", 0.0) * 100.0)
+        status_note = "Valid Torsional Oscillation" if is_osc else "Low Amplitude / Static motion (< 1.5 cm)."
         step = max(1, len(t) // 600)
         metrics = {
             "mode": "torsion",
@@ -354,6 +375,9 @@ def process_kinematics_payload(raw_time: np.ndarray, raw_dist: np.ndarray, physi
             "e0_mJ": float(e0 * 1000.0),
             "energy_lost_pct": float(((e0 - E_torsion[-1]) / e0) * 100.0) if e0 > 0 else 0.0,
             "x_eq": float(x_eq),
+            "is_oscillating": is_osc,
+            "ptp_amplitude_cm": ptp_cm,
+            "status_note": status_note,
             "valid_samples": int(kinematics["stats"]["valid_samples"])
         }
         return {
