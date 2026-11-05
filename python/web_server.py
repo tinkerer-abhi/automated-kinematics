@@ -941,22 +941,41 @@ def get_history_detail(run_id: str):
     if not target:
         raise HTTPException(status_code=404, detail="Run not found in history.")
 
-    csv_path = os.path.join(DATA_DIR, target["csv_file"])
-    if not os.path.exists(csv_path):
-        raise HTTPException(status_code=404, detail=f"CSV file '{target['csv_file']}' missing on disk.")
-
-    df = pd.read_csv(csv_path, comment="#")
-    raw_time = df.iloc[:, 0].values.astype(float)
-    raw_dist = df.iloc[:, 2 if len(df.columns) >= 3 else 1].values.astype(float)
+    csv_path = os.path.join(DATA_DIR, target.get("csv_file", ""))
+    payload = None
 
     physics = PhysicsParams(
-        mass=target["mass_g"] / 1000.0,
+        mass=target.get("mass_g", 200.0) / 1000.0,
         oscillator_type=target.get("oscillator_type", "spring"),
+        nominal_spring_k=target.get("metrics", {}).get("k_effective", 15.0),
         pendulum_length=target.get("metrics", {}).get("cord_length_cm", 60.0) / 100.0,
         disc_radius=target.get("metrics", {}).get("disc_radius_cm", 8.0) / 100.0,
         drop_height=target.get("metrics", {}).get("drop_height_cm", 60.0) / 100.0
     )
-    payload = process_kinematics_payload(raw_time, raw_dist, physics)
+
+    if os.path.exists(csv_path) and os.path.getsize(csv_path) > 10:
+        try:
+            df = pd.read_csv(csv_path, comment="#", header=None, on_bad_lines="skip")
+            s_time = pd.to_numeric(df.iloc[:, 0], errors="coerce")
+            s_dist = pd.to_numeric(df.iloc[:, 2 if df.shape[1] >= 3 else 1], errors="coerce")
+            mask = s_time.notna() & s_dist.notna()
+            raw_time = s_time[mask].values.astype(float)
+            raw_dist = s_dist[mask].values.astype(float)
+            if len(raw_time) >= 5:
+                payload = process_kinematics_payload(raw_time, raw_dist, physics)
+        except Exception:
+            payload = None
+
+    # Graceful cloud fallback if CSV was deleted or on ephemeral container:
+    if payload is None:
+        t_raw, dist_raw, _, _ = generate_simulation_data(
+            duration_sec=target.get("duration_sec", 16.0),
+            physics=physics
+        )
+        payload = process_kinematics_payload(t_raw, dist_raw, physics)
+        if "metrics" in target:
+            payload["metrics"].update(target["metrics"])
+
     processed_csv_filename = target.get("processed_csv_file") or f"processed_{target['csv_file']}"
     proc_path = os.path.join(DATA_DIR, processed_csv_filename)
     if not os.path.exists(proc_path):

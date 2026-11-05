@@ -579,35 +579,41 @@
     });
 
     // --- OSCILLATOR MODE SWITCHER ---
-    function selectOscillatorMode(mode) {
+    function selectOscillatorMode(mode, triggerSim = true) {
       activeMode = mode;
       const conf = MODE_CONFIGS[mode];
 
       // Update Button Styles
       ['spring', 'pendulum', 'cart', 'torsion', 'freefall'].forEach(m => {
         const btn = document.getElementById('btnOsc' + m.charAt(0).toUpperCase() + m.slice(1));
-        if (m === mode) {
-          btn.className = "p-2.5 rounded-xl text-xs font-bold transition-all text-left border bg-sky-500/20 text-sky-200 border-sky-400/50 shadow-sm flex flex-col gap-1";
-        } else {
-          btn.className = "p-2.5 rounded-xl text-xs font-semibold transition-all text-left border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 flex flex-col gap-1";
+        if (btn) {
+          if (m === mode) {
+            btn.className = "p-2.5 rounded-xl text-xs font-bold transition-all text-left border bg-sky-500/20 text-sky-200 border-sky-400/50 shadow-sm flex flex-col gap-1";
+          } else {
+            btn.className = "p-2.5 rounded-xl text-xs font-semibold transition-all text-left border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 flex flex-col gap-1";
+          }
         }
       });
 
       // Update Mode Configuration Titles & Explanations
-      document.getElementById('modeConfigTitle').textContent = conf.title;
-      document.getElementById('modeConfigBadge').textContent = conf.badge;
-      document.getElementById('labelMass').innerHTML = `<span>⚖️</span> ${conf.massLabel}`;
-      document.getElementById('modeExplanationTitle').textContent = `💡 ${conf.title}`;
-      document.getElementById('modeExplanationText').textContent = conf.explanation;
+      if (conf) {
+        document.getElementById('modeConfigTitle').textContent = conf.title;
+        document.getElementById('modeConfigBadge').textContent = conf.badge;
+        document.getElementById('labelMass').innerHTML = `<span>⚖️</span> ${conf.massLabel}`;
+        document.getElementById('modeExplanationTitle').textContent = `💡 ${conf.title}`;
+        document.getElementById('modeExplanationText').textContent = conf.explanation;
 
-      // Toggle Input Fields
-      toggleDisplay('fieldPendulumLength', conf.showLength);
-      toggleDisplay('fieldTorsionSpecs', conf.showTorsion);
-      toggleDisplay('fieldFreefallHeight', conf.showFreefall);
-      toggleDisplay('fieldSpringPreset', conf.showSpring);
+        // Toggle Input Fields
+        toggleDisplay('fieldPendulumLength', conf.showLength);
+        toggleDisplay('fieldTorsionSpecs', conf.showTorsion);
+        toggleDisplay('fieldFreefallHeight', conf.showFreefall);
+        toggleDisplay('fieldSpringPreset', conf.showSpring);
+      }
 
-      // Re-run simulation or update active view for chosen mode
-      runSimulation();
+      // Re-run simulation ONLY if explicitly requested (prevents clobbering history or live experiments)
+      if (triggerSim) {
+        runSimulation();
+      }
     }
 
     function toggleDisplay(elementId, show) {
@@ -1466,11 +1472,16 @@
         if (!res.ok) throw new Error("Could not load history item.");
         const payload = await res.json();
         switchTab('experiment');
-        if (payload.history_entry && payload.history_entry.oscillator_type) {
-          selectOscillatorMode(payload.history_entry.oscillator_type);
-        }
+        const targetMode = (payload.history_entry && payload.history_entry.oscillator_type) 
+          ? payload.history_entry.oscillator_type 
+          : (payload.mode || 'spring');
+
+        // Pass triggerSim = false so the loaded history dataset is NOT overwritten by a simulation!
+        selectOscillatorMode(targetMode, false);
         applyDataset(payload);
-        showSuccess(`Loaded run: ${payload.history_entry.name}`);
+
+        const runName = (payload.history_entry && payload.history_entry.name) ? payload.history_entry.name : runId;
+        showSuccess(`Loaded run: ${runName}`);
       } catch (err) {
         alert(err.message);
       }
